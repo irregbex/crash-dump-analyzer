@@ -1,0 +1,10 @@
+# Never commit crash dumps: they contain process memory of the machine that produced them.
+*.dmp
+*.mdmp
+*.hdmp
+# Personal notes exported from the analyzer
+*-notes.json
+# Test artefacts
+pe_ref.json
+all2_*.txt
+support.txt

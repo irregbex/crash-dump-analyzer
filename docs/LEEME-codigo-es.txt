@@ -1,0 +1,92 @@
+CRASH DUMP ANALYZER 1.4.0 - CÓDIGO FUENTE
+=========================================
+En el repositorio de GitHub las pruebas se ejecutan desde la raíz:
+  node tests/core_test.js CrashDumpAnalyzer.html [carpeta con .dmp opcional]
+  python tests/make_pe_ref.py modulo_x64.dll > pe_ref.json
+  node tests/pe_unwind_test.js CrashDumpAnalyzer.html modulo_x64.dll pe_ref.json
+
+El código fuente es el mismo CrashDumpAnalyzer.html de la carpeta superior.
+No hay compilación ni minificación.
+
+Archivos
+--------
+..\CrashDumpAnalyzer.html   (cambia en 1.4.0)
+    Funciones nuevas (CORE): fnv1a, crashSignature, demangleTypeName,
+    cxxExceptionType, CXX_HINTS, fixFirst, REPORT_CSS, buildReportHTML,
+    DumpWriter, CTX_OFF, makeDump y demoDumps; I18N.de.
+    Funciones nuevas (UI): selectedItems, reportTokens, exportHTML,
+    printReport y loadDemo; elemento #printArea con @media print; botones
+    btnHTML, btnPrint, btnDemo y DE.
+    Funciones modificadas: analyze() (signature, cxxType), compare()
+    (sig, c.sameSig, fixFirst), analyzeInstruction() (solo fallos de
+    hardware), buildCSV (columna signature), buildJSON, buildTextReport y
+    buildSupportText (firma).
+    1.3.0: (cambia en 1.3.0: nuevo nombre del programa y del
+    archivo; antes CrashDumpViewer.html. Agrega NOTES_FORMATS: se exporta
+    'crash-dump-analyzer-notes' y al importar se aceptan también los archivos
+    'crash-dump-viewer-notes').
+    Detalle de 1.2.1:
+    1.2.1: <link rel="icon"> (SVG en data URI), logo SVG en <h1>, estilos
+    .where y aside details, DUMP_PATHS, whereHTML(), copyText(), listener
+    global para [data-copy], <details id="whereBox"> en la barra lateral.
+    Archivo fuente del ícono: ..\Icono\CrashDumpAnalyzer.svg (viewBox
+    64x64).
+    Detalle de 1.2.0:
+    Funciones nuevas en 1.2.0 (CORE): decodeX64, ptrCategory,
+    analyzeInstruction, privacyTokens, anonymizeAll, parseNotes,
+    serializeNotes, notesFor, notesForDump, buildCSV y buildJSON.
+    Funciones nuevas en 1.2.0 (UI): renderNotes, importNotes, exportNotes,
+    addNote, exportCSV y exportJSON.
+    Funciones modificadas: compare() (changes), buildTextReport() (notes,
+    instrucción), buildSupportText() (instrucción) y download() (MIME, sin
+    BOM en JSON).
+    Detalle de 1.1.0:
+    <style>        Tokens de tema, layout y estilos nuevos: .chk, .status,
+                   textarea.support, svg.timeline, .warncard.
+    CORE           Entre los marcadores /*CORE-BEGIN*/ y /*CORE-END*/.
+                   JavaScript puro, sin DOM; global CDV y module.exports.
+                   Lo nuevo: parseProcessVm, parseSysMem, scanRange,
+                   readCode, parsePE, rvaToOff, peRead, peLookupFunction,
+                   peFunctionName, attachPE, applyUnwind, unwindX64,
+                   inferActivity, moduleWarnings, overviewThreads,
+                   noteText, buildSupportText, collectUserNames y
+                   anonymize. compare() se reescribió (versions y notas
+                   nuevas); buildTextReport() tiene numeración automática
+                   de secciones y las secciones Memoria, Avisos y Resumen
+                   de hilos.
+    UI             Reescrita: carpetas, vigilancia, archivos PE, pestaña
+                   Support summary, tarjetas nuevas, línea de tiempo,
+                   anonimizado y deduplicación.
+ARQUITECTURA.txt              (cambia) Estructuras, algoritmos y reglas.
+tests\core_test.js            (reescrito en 1.4.0: 17 verificaciones
+                              con resultado OK/FAIL y código de salida;
+                              incluye los dumps demo, el informe HTML y la
+                              paridad ES/DE.)
+                              Antes: (cambia en 1.2.0) Prueba del CORE con dumps
+                              reales: instrucción, notas, CSV/JSON y
+                              anonimizado sintético.
+tests\pe_unwind_test.js       (nuevo)  Prueba del lector PE y del
+                              desenrollador.
+tests\make_pe_ref.py          (nuevo)  Genera la referencia independiente
+                              con pefile.
+
+Pruebas
+-------
+1) node tests\core_test.js ..\CrashDumpAnalyzer.html "<carpeta con .dmp>"
+   - Imprime por cada dump: culpable, confianza, instrucción decodificada
+     y advertencias del parser.
+   - Después verifica:
+       * notas: exportar y volver a importar, rechazo de un archivo
+         inválido, notas incluidas en el informe;
+       * columnas del CSV y cantidad de dumps del JSON;
+       * anonimizado sobre rutas sintéticas;
+       * paridad de claves I18N.
+2) python tests\make_pe_ref.py <modulo_x64.dll> > pe_ref.json
+   node tests\pe_unwind_test.js ..\CrashDumpAnalyzer.html <modulo_x64.dll> pe_ref.json
+   - Compara parsePE con pefile (timestamp, SizeOfImage, exports y .pdata).
+   - Para cada función sin registro de frame ni cadena, arma un stack
+     sintético con el tamaño de frame calculado por pefile.
+   - Verifica que unwindX64 recupere la dirección de retorno y el RSP
+     exactos.
+
+Requisitos: Node 16 o superior; Python 3 con pefile (solo para la prueba 2).

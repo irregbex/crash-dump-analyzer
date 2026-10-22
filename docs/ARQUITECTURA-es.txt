@@ -1,0 +1,592 @@
+CRASH DUMP ANALYZER 1.4.0 - ARQUITECTURA
+========================================
+
+0. INVENTARIO DE MÓDULOS (bloque CORE, en orden dentro del archivo)
+------------------------------------------------------------------
+ 1  Constantes        STREAM_NAMES, DUMP_FLAGS, ARCH, EXC_NAMES, FAST_FAIL,
+                      INTEGRITY, WIN_BUILDS, VENDOR_RULES, LEGACY_PLUGINS,
+                      OLD_PLUGIN_YEARS, ACTIVITY_RULES, WAIT_IP_RE, GPU_RE
+ 2  I18N / t()        diccionario en/es y traductor con placeholders
+ -  Formato           hex, hex8, fmtSize, fmtTime, fmtDur,
+                      filetimeToUnix, ticksToSec
+ 3  Reader            lector little-endian con verificación de límites
+ 4  Parsers           parseContext, parseSystemInfo, parseModules,
+                      parseProcessVm, parseSysMem,
+                      parseUnloaded, parseMemList, parseMem64,
+                      parseThreads, parseThreadInfo, parseThreadNames,
+                      parseMisc, parseException, parseCommentA/W
+ 5  parseMinidump     header, directorio y despacho ordenado
+ 6  Direcciones       findModule, findUnloaded, readMem, symbolize
+ 7  Clasificación     classifyModule, vendorOf, isSystemish, tierOf
+ 8  Stack             readCode, isAfterCall, scanRange, scanStack
+ 8b PE / unwind       parsePE, rvaToOff, peRead, peLookupFunction,
+                      peFunctionName, attachPE, X64_REGS, applyUnwind,
+                      unwindX64
+ 8c Decodificador    GPR64/32/16/8, ALU, SHIFT, GRP3, GRP5, CC, MODRM1,
+                      BYTEOP1, NOMODRM_0F, IMM8_0F, SSE_0F, INT_0F,
+                      REG_DEST_0F, decodeX64, ptrCategory,
+                      analyzeInstruction
+ 9  analyze           findMainThread, threadRole, actionsFor, analyze,
+                      inferActivity, moduleWarnings, overviewThreads
+10  compare           estadística, versiones, notas; noteText
+11  Texto             pad, wrap, section, buildTextReport,
+                      buildCompareText, buildSupportText,
+                      collectUserNames, anonymize, privacyTokens,
+                      anonymizeAll, parseNotes, serializeNotes, notesFor,
+                      notesForDump, buildCSV, buildJSON
+Bloque UI: state, applyStatic, loadFiles (enruta .dmp y PE),
+entriesFromDrop, walkEntries, watchFolder, rescan, renderList, render,
+renderDiag, memKV, renderThreadsOv, supportText, renderSupport,
+copySupport, renderExc, renderRegs, renderStack, renderThreads,
+renderModules, renderSystem, renderStreams, timelineSVG, renderCompare,
+finalText, download, exportOne, exportAll y eventos.
+
+
+1. LECTOR (Reader)
+------------------
+- DataView little-endian sobre el ArrayBuffer completo.
+- u8, u16, u32, i32 y u64 (BigInt). u64n convierte a Number y solo se usa
+  para RVAs y tamaños.
+- need(off, n) lanza "read out of file bounds" si el rango sale del archivo.
+  Cada parser de stream corre dentro de try/catch; un error se agrega a
+  d.warnings y no detiene el resto del análisis.
+- mdString(rva): MINIDUMP_STRING = u32 Length (bytes) + UTF-16LE.
+- cstr(o, max): ASCII/UTF-8 terminado en NUL.
+
+
+2. ESTRUCTURAS (offsets en bytes, todo packed y little-endian)
+-------------------------------------------------------------
+MINIDUMP_HEADER (32)
+  +0 Signature 0x504D444D 'MDMP'   +4 Version (lo16 ver, hi16 impl)
+  +8 NumberOfStreams  +12 StreamDirectoryRva  +16 CheckSum
+  +20 TimeDateStamp (unix)  +24 u64 Flags (MINIDUMP_TYPE)
+MINIDUMP_DIRECTORY (12): StreamType, DataSize, Rva. Type 0 = Unused y se
+  ignora.
+
+Orden de despacho: 7, 4, 14, 5, 9, 3, 17, 24, 15, 6, 10, 11, 21, 22.
+  SystemInfo va primero porque ProcessorArchitecture define el layout de
+  CONTEXT. Las listas de memoria van antes que ThreadList.
+
+SystemInfo (7)
+  +0 u16 Arch  +2 Level  +4 Revision  +6 u8 NumberOfProcessors
+  +7 u8 ProductType  +8 Major  +12 Minor  +16 Build  +20 PlatformId
+  +24 CSDVersionRva  +28 SuiteMask  +32 CPU VendorId[12] (x86/x64)
+  Nombre del SO: NT 10.0 con build >= 22000 es Windows 11. WIN_BUILDS
+  traduce el build a la versión comercial (26100 = 24H2, 26200 = 25H2).
+ModuleList (4): u32 N, luego MINIDUMP_MODULE de 108 bytes
+  +0 u64 Base  +8 Size  +12 CheckSum  +16 TimeDateStamp  +20 NameRva
+  +24 VS_FIXEDFILEINFO (52): sig 0xFEEF04BD @+24, FileVerMS @+32,
+      FileVerLS @+36, ProdVerMS @+40, ProdVerLS @+44
+  +76 CvRecord {Size, Rva}. 'RSDS' 0x53445352, GUID @+4, Age @+20,
+      PdbName @+24.
+      pdbId = GUID (Data1/2/3 invertidos + Data4) + Age en hex (formato
+      del servidor de símbolos).
+  El primer módulo en el orden del stream es el .exe (d.exeModule). Después
+  la lista se ordena por base para hacer búsqueda binaria.
+UnloadedModuleList (14): {SizeOfHeader, SizeOfEntry, N}. Entrada:
+  +0 u64 Base +8 Size +12 CheckSum +16 TimeDateStamp +20 NameRva.
+MemoryList (5): u32 N, descriptor de 16 bytes {u64 Start, u32 Size,
+  u32 Rva}.
+Memory64List (9): u64 N, u64 BaseRva, descriptor de 16 bytes {u64 Start,
+  u64 Size}. Los datos van contiguos desde BaseRva.
+ThreadList (3): u32 N, MINIDUMP_THREAD de 48 bytes
+  +0 Id +4 Suspend +8 PrioClass +12 i32 Prio +16 u64 Teb
+  +24 Stack {u64 Start, u32 Size, u32 Rva}  +40 Context {u32 Size,
+  u32 Rva}
+  Stack.Rva = 0 (caso del dumper interno de Cubase) significa que el stack
+  solo está en MemoryList y NO se registra como rango (RVA 0 apuntaría al
+  header del archivo).
+ThreadInfoList (17): {SizeOfHeader, SizeOfEntry, N}. Entrada:
+  +0 Id +4 DumpFlags +8 DumpError +12 ExitStatus +16 CreateTime
+  +24 ExitTime +32 KernelTime +40 UserTime (FILETIME) +48 StartAddress
+  +56 Affinity
+ThreadNames (24): u32 N, entrada de 12 bytes {u32 Id, u64 NameRva}.
+MiscInfo (15): SizeOfInfo, Flags1. Según el flag:
+  0x1 PID @+8 | 0x2 CreateTime @+12, User @+16, Kernel @+20 (segundos)
+  0x4 MaxMhz @+24, CurMhz @+28 | 0x10 Integrity @+44
+  0x40 TZ: Bias @+60, StandardName @+64 (64 bytes)
+  0x100 (size >= 832): BuildString @+232 (520 bytes),
+        DbgBldStr @+752 (80 bytes)
+ProcessVmCounters (22), según Revision:
+  _1: +0 u16 Revision  +4 PageFaultCount  +8 PeakWorkingSetSize
+      +16 WorkingSetSize  +24..+48 cuotas de pool  +56 PagefileUsage
+      +64 PeakPagefileUsage  +72 PrivateUsage
+  _2: +2 u16 Flags; igual que _1 hasta +64, luego +72 PeakVirtualSize
+      +80 VirtualSize  +88 PrivateUsage  +96 PrivateWorkingSetSize
+      +104 SharedCommitUsage  +112.. contadores Job*
+  En 1.1.0 se corrigió el layout _2 (PrivateUsage está en +88, no en +72).
+  Validación: en los dumps de Cubase, PrivateUsage == PagefileUsage.
+SystemMemoryInfo (21), MINIDUMP_SYSTEM_MEMORY_INFO_1:
+  +0 Revision  +2 Flags
+  BasicInfo:     +8 PageSize  +12 NumberOfPhysicalPages (u32)
+                 +52 NumberOfProcessors
+  FileCacheInfo: +56 CurrentSize  +64 PeakSize ...  +112 Flags
+  BasicPerfInfo: +116 AvailablePages  +124 CommittedPages
+                 +132 CommitLimit  +140 PeakCommitment (páginas; se
+                 multiplican por PageSize)
+  Validación: la RAM total calculada coincide con la RAM instalada del equipo que generó el dump.
+Exception (6)
+  +0 ThreadId +8 Code +12 Flags +16 u64 Record +24 u64 Address
+  +32 NumberParameters (máx. 15) +40 u64 Info[15] +160 Context {Size, Rva}
+CONTEXT
+  x64   (arch 9):  Rax 78 Rcx 80 Rdx 88 Rbx 90 Rsp 98 Rbp A0 Rsi A8
+                   Rdi B0 R8-R15 B8-F0 Rip F8 EFlags 44
+  x86   (arch 0):  Edi 9C Esi A0 Ebx A4 Edx A8 Ecx AC Eax B0 Ebp B4
+                   Eip B8 EFlags C0 Esp C4
+  ARM64 (arch 12): X0-X28 08.. Fp F0 Lr F8 Sp 100 Pc 108
+
+
+3. LECTURA DE MEMORIA (readMem / readCode)
+------------------------------------------
+Los rangos se ordenan por Start. memMaxEnd[i] guarda el mayor end de los
+rangos 0..i; el recorrido hacia atrás se corta cuando
+memMaxEnd[i] < addr+len.
+readCode(addr, len) lee primero de la memoria del dump. Si no está ahí y el
+módulo tiene archivo PE cargado, convierte la dirección en RVA y lee los
+bytes del archivo en el offset correspondiente. La búsqueda binaria encuentra el último
+rango con Start <= addr. Desde ahí se recorre hacia atrás hasta encontrar un
+rango que contenga [addr, addr+len) completo. Hay que recorrer hacia atrás
+sin límite porque WithIndirectlyReferencedMemory agrega muchos rangos chicos
+dentro del stack, y el rango completo del stack queda varios índices antes.
+
+
+4. STACK (scanStack = unwind exacto + scanRange)
+-----------------------------------------------
+- Si la arquitectura es x64 y hay al menos un archivo PE coincidente
+  (d.hasPE), primero se ejecuta unwindX64 (sección 10). El escaneo
+  continúa desde el RSP donde se detuvo el desenrollado. Si falla, se
+  registra en d.warnings y se usa solo el escaneo.
+- El frame 0 es el IP del contexto. Para el hilo del fallo se usa el
+  contexto del ExceptionStream; el contexto de ThreadList apunta a los
+  frames del propio escritor del dump (dbgcore/ntdll).
+- El escaneo va desde SP, si está dentro del stack capturado, o desde
+  Stack.Start, hasta Stack.Start+Size, de a ptrSize bytes (8 en x64/ARM64,
+  4 en x86).
+- Un valor cuenta como candidato si cae dentro de un módulo con offset
+  >= 0x1000 (para excluir el header PE). Si el valor es idéntico al
+  anterior, se omite.
+- Máximo 64 frames.
+- isAfterCall(ret): lee ret-7..ret-1. Cuenta como CALL si
+  b[2] == 0xE8 (call rel32) o si b[i] == 0xFF con (b[i+1]>>3)&7 == 2 para
+  i = 5, 4, 1, 0 (call r/m de 2, 3, 6 o 7 bytes, con o sin REX).
+  Devuelve null si los bytes no están en el dump.
+- Si al menos un frame escaneado se confirma como CALL, se descartan los
+  escaneados con resultado false. Los frames exactos no se tocan.
+- Cada frame lleva method = 'unwind' o 'scan'.
+
+
+5. CLASIFICACIÓN (classifyModule): primera regla que coincide
+------------------------------------------------------------
+ host              ruta == exe
+ gpu               nombre coincide con GPU_RE, o ruta en
+                   \DriverStore\FileRepository\
+ system            \windows\ en la ruta
+ webview           edgewebview, webview2 o embeddedbrowserwebview
+ protection        \pace\, \ilok, wrappersist o paceeden
+ plugin-vst3       .vst3 al final o como carpeta de bundle
+ plugin-clap       .clap
+ plugin-aax        .aaxplugin
+ audio-driver      nombre con asio, tusbaudio o ysusb, o carpeta con "asio"
+ plugin-vst2       carpeta vstplugins, vst plugins, vst2, vst o vst64
+ ara               \celemony\
+ runtime           vcruntime*, msvcp*, concrt*, vcomp*, ucrtbase,
+                   api-ms-win*, vccorlib*
+ host-component    dentro de la carpeta del exe
+ vendor-component  contiene \<carpeta del fabricante>\, donde la carpeta es
+                   el primer nivel bajo Program Files en la ruta del exe
+                   (ej. \steinberg\)
+ thirdparty        cualquier otro caso
+isSystemish  = system o runtime.
+tierOf: 1 = plugin-*, audio-driver, ara, protection, thirdparty;
+        2 = vendor-component, webview, gpu; 3 = host, host-component.
+
+
+6. analyze()
+------------
+Salida: kind (crash | hang | snapshot), verdict {key, vars},
+culprit {module, reason, confidence}, findings[], actions[], frames[],
+suspects[] (máx. 10), thirdParty[], faultThread, faultRole, mainThread,
+uptimeSec, exc, av, faultSym.
+- kind: con ExceptionStream es crash. Sin él, hang si el nombre del archivo
+  coincide con /freeze|hang|deadlock|watchdog/i; si no, snapshot.
+- Reglas del culpable y confianza: ver README, sección 3.
+- Rol del hilo: main si es el hilo principal; audio si el nombre coincide
+  con /audio|asio|vst|dsp|engine|mix|process|render|realtime|rt[ _-]/i; si
+  no, worker.
+- uptime = header.TimeDateStamp - MiscInfo.ProcessCreateTime.
+- Las acciones dependen del tipo del culpable (actionsFor). Con fabricante
+  desconocido se usan a.updateDev y a.reportDev.
+  Orden de las acciones agregadas después:
+    a.inpage    (si la excepción es 0xC0000006)
+    a.deadlock  o a.hang  (en congelamientos se quitan a.report y
+                a.reportDev para no repetir)
+    a.mem.ram   (lowRam)
+    a.mem.commit (highCommit)
+    a.dual
+    a.system    (motivo fault-system o none)
+    a.windbg
+- Memoria: lowRam = avail/total < 0,08 o avail < 1,5 GiB;
+  highCommit = commit/limit >= 0,90; bigProc = privada/RAM >= 0,60.
+- inferActivity: recorre los 30 frames superiores; en cada frame aplica
+  la primera regla de ACTIVITY_RULES que coincida (por nombre de módulo
+  o por tipo). Sin duplicados. Un hilo con rol audio agrega 'audioproc'
+  al principio.
+- moduleWarnings: w.dual compara nombres normalizados
+  (.dll/.vst3, (x64), x64, 64bit, espacios, '_' y '-' eliminados) entre
+  plugin-vst2 y plugin-vst3; w.old exige 2000-01-01 <= link < dump y
+  edad >= OLD_PLUGIN_YEARS; w.legacy usa LEGACY_PLUGINS (un aviso por
+  entrada).
+- overviewThreads: por hilo, el contexto es el de la excepción para el
+  hilo del fallo y el de ThreadList para el resto. Se escanean 32 frames
+  (el hilo del fallo reutiliza a.frames). El estado sale del módulo de la
+  IP: wait (WAIT_IP_RE), sys, host o third. También guarda el primer
+  módulo no-Windows y si el culpable está en el stack.
+  Deadlock (solo en congelamientos): el hilo principal está en wait, hay
+  otros hilos en wait con el culpable en el stack, y el culpable es de
+  nivel 1 o 2.
+
+
+7. compare()
+------------
+- rows: una fila por dump, ordenadas por TimeDateStamp; incluye
+  culpritVer.
+- versions: por cada culpable, los dumps donde está cargado, con versión y
+  marca de si fue el culpable.
+- freq: cuántas veces aparece cada culpable.
+- common: módulos de terceros presentes en 2 o más dumps.
+- notes:
+    c.single       hay menos de 2 dumps
+    c.repeat       un culpable aparece 2 o más veces
+    c.allDifferent cada dump tiene un culpable distinto
+    c.systemMany   2 o más dumps con motivo fault-system o none
+    c.updatedStill el culpable aparece con 2 o más versiones distintas
+    c.sameVersion  el culpable aparece 2 o más veces con la misma versión
+    c.updatedOk    después de la última caída hay dumps donde el módulo
+                   no es culpable y al menos uno tiene otra versión
+    c.warnMany     la misma clave de aviso con el mismo módulo en 2 o más
+                   dumps; se muestra a través de noteText con la sub-nota
+                   traducida
+
+
+8. I18N
+-------
+t(lang, key, vars):
+- Busca la clave en I18N[lang], luego en I18N.en y si no, devuelve la clave.
+- {x} se reemplaza por vars.x. Si el valor empieza con '@', se traduce como
+  clave en el mismo idioma.
+- analyze() guarda solo claves y variables, así que el cambio de idioma no
+  vuelve a parsear el dump.
+
+
+9. SEGURIDAD
+------------
+- Anonimizado (activado por defecto):
+  1) [\/]users[\/]<nombre> se reemplaza por \Users\<user>, excepto
+     los perfiles Public, Default, Default User y All Users.
+  2) Cada nombre de usuario detectado en las rutas de módulos de los
+     dumps cargados (con largo >= 3) se reemplaza como palabra completa
+     por <user>.
+  Se aplica a: exportar uno, exportar todo y el resumen para soporte.
+- CSP: default-src 'none'; script-src y style-src 'unsafe-inline';
+  img-src data: y blob:; connect-src 'none'; form-action 'none';
+  base-uri 'none'.
+- Todo texto que viene del dump pasa por esc() antes de llegar a innerHTML.
+- La descarga se hace con un Blob, URL.createObjectURL y un <a download>.
+  El texto lleva BOM UTF-8 y saltos CRLF.
+
+
+10. LECTOR PE Y DESENROLLADO x64
+-------------------------------
+parsePE(buffer):
+  1) 'MZ' @0 y e_lfanew @0x3C; firma 'PE\0\0' en e_lfanew.
+  2) FILE_HEADER: Machine, NumberOfSections, TimeDateStamp,
+     SizeOfOptionalHeader.
+  3) OPTIONAL_HEADER: Magic 0x10B o 0x20B; SizeOfImage @+56; directorios
+     @+96 (PE32) o @+112 (PE32+); cantidad de directorios @+92 o @+108.
+  4) Secciones de 40 bytes: VirtualSize, VirtualAddress, SizeOfRawData y
+     PointerToRawData. rvaToOff traduce RVA a offset de archivo y devuelve
+     -1 cuando la RVA no tiene datos en el archivo (.bss).
+  5) Exports (directorio 0): se descartan los forwarders (RVA de la función
+     dentro del propio directorio de exports). La lista se ordena por RVA.
+  6) .pdata (directorio 3, solo x64): Uint32Array con tríos
+     (Begin, End, UnwindInfo), ordenado por Begin.
+attachPE(d, list): m.pe = P cuando P.timestamp == m.timestamp y
+  P.sizeOfImage == m.size. d.hasPE indica si hubo alguna coincidencia.
+peFunctionName(P, rva):
+  - "Export+0xN" cuando el export más cercano por debajo es el inicio de
+    la función según .pdata (o, si no hay .pdata, cuando está a menos de
+    0x400).
+  - Si no, "fn 0xBEGIN+0xN".
+  - symbolize() agrega este nombre entre paréntesis.
+unwindX64(d, thread, ctx, max):
+  Estado inicial: regs[16] tomados del CONTEXT, rsp y ip.
+  En cada frame:
+    1) Se registra el frame (method 'unwind').
+    2) Si el módulo no tiene archivo PE, se detiene.
+    3) rva = ip - base, menos 1 desde el segundo frame (la dirección de
+       retorno apunta después del CALL).
+    4) Se busca RUNTIME_FUNCTION. Si UnwindInfo & 1, es indirecto: se lee
+       la RUNTIME_FUNCTION apuntada y se usa su UnwindInfo.
+    5) Si no hay función (función hoja): ret = [rsp]; rsp += 8.
+    6) Si hay función: applyUnwind con ipOff = rva - Begin. Si falla, se
+       restaura el rsp previo y se detiene.
+    7) Si no hubo PUSH_MACHFRAME: ret = [rsp]; rsp += 8.
+    8) Se detiene cuando ip < 0x10000 o rsp sale de
+       (stackStart, stackStart+size].
+applyUnwind(P, unwindRva, ipOff, st, chained):
+  UNWIND_INFO: b0 = Version | Flags << 3; b1 = SizeOfProlog;
+  b2 = CountOfCodes; b3 = FrameRegister | FrameOffset << 4.
+  Cada código ocupa 2 bytes: CodeOffset y UnwindOp | OpInfo << 4. Se aplica
+  si chained o CodeOffset <= ipOff (prólogo ya ejecutado). UWOP_EPILOG
+  (op 6) nunca se aplica.
+  Slots por opcode: ALLOC_LARGE 2 (OpInfo 0) o 3 (OpInfo 1); SAVE_NONVOL,
+  EPILOG y SAVE_XMM128: 2; SAVE_NONVOL_FAR y SAVE_XMM128_FAR: 3; resto: 1.
+  Efectos:
+    0  PUSH_NONVOL      reg = [rsp]; rsp += 8
+    1  ALLOC_LARGE      rsp += u16*8 (OpInfo 0) o u32 (OpInfo 1)
+    2  ALLOC_SMALL      rsp += OpInfo*8 + 8
+    3  SET_FPREG        rsp = reg[FrameRegister] - FrameOffset*16
+    4  SAVE_NONVOL      reg = [rsp + u16*8]
+    5  SAVE_NONVOL_FAR  reg = [rsp + u32]
+    8, 9               sin efecto sobre los registros enteros
+    10 PUSH_MACHFRAME   base = rsp (+8 si OpInfo = 1); ip = [base];
+                        rsp = [base+24]
+    otro               falla
+  Flags & 4 (CHAININFO): la RUNTIME_FUNCTION encadenada está en
+  o + 4 + 2*((Count+1) & ~1); se aplica completa.
+Verificación: tests\pe_unwind_test.js (108/108 contra pefile).
+
+
+11. INTERFAZ: CARPETAS, VIGILANCIA Y ENRUTAMIENTO
+------------------------------------------------
+- Enrutamiento: los archivos se separan por extensión.
+  - DUMP_RE (dmp, mdmp, hdmp): dumps.
+  - PE_RE (dll, vst3, exe, clap): archivos de módulo, hasta 768 MB.
+  - Clave de deduplicación: nombre|tamaño|lastModified.
+  - Cuando llegan archivos PE nuevos se repite attachPE y analyze en todos
+    los dumps.
+- Arrastre: webkitGetAsEntry se toma de forma síncrona dentro del evento
+  drop; luego walkEntries recorre las carpetas con readEntries en lotes
+  hasta recibir un lote vacío.
+- Vigilancia: showDirectoryPicker({mode: 'read'}); rescan itera
+  dir.entries() y llama a loadFiles; "auto" usa setInterval de 15000 ms.
+  El handle vive solo en memoria y nunca se guarda.
+- Copy: navigator.clipboard.writeText; si falla, usa textarea.select y
+  document.execCommand('copy').
+- Línea de tiempo: SVG con viewBox 900 x (24 + carriles*46 + 28); un
+  carril por hostLabel. Cuando dos puntos del mismo carril quedan a menos
+  de 90 px, sus etiquetas alternan arriba y abajo. Colores con las
+  variables CSS --crash, --hang y --accent.
+
+
+12. DECODIFICADOR x64 (decodeX64 / analyzeInstruction)
+----------------------------------------------------
+Orden de decodificación:
+  1) Prefijos legacy, hasta 14 bytes:
+       66 (opsize), 67 (se ignora), F2/F3 (rep, y pp de SSE), F0 (lock),
+       64/65 (fs/gs), 2E/36/3E/26 (nulos en modo 64 bits).
+  2) REX 40-4F: W, R, X, B.
+  3) Prefijos de codificación vectorial:
+       C5 (VEX de 2 bytes): R invertido, L, pp; mapa 0F.
+       C4 (VEX de 3 bytes): R, X, B invertidos; mmmmm = mapa; W, L, pp.
+       62 (EVEX): R, X, B invertidos en P0; mm = mapa; W y pp en P1;
+                  L'L en P2.
+     Si no hay VEX/EVEX: 0F es el mapa 1; 0F 38 el mapa 2; 0F 3A el mapa 3.
+  4) Opcode.
+  5) Instrucciones de string A4-AF (excepto A8 y A9): operandos implícitos
+     [RSI] / [RDI]; no se lee ModRM.
+  6) ¿Lleva ModRM?
+       mapa 0:            según MODRM1 (00-3F con op&7 < 4, 63, 69, 6B,
+                          80-8F, C0, C1, C6, C7, D0-D3, D8-DF, F6, F7,
+                          FE, FF);
+       mapa 1:            todos excepto NOMODRM_0F;
+       mapas 2 y 3:       siempre.
+     Sin ModRM: jcc, ud2 u "op xx".
+  7) ModRM: mod = b>>6; reg = (b>>3 & 7) | R<<3; rm = b & 7.
+       mod != 3 y rm == 4: SIB con scale = 1<<ss;
+         index = idx | X<<3, donde idx == 4 significa "sin índice";
+         base = bs | B<<3; si bs == 5 y mod == 0: disp32 sin base.
+       mod == 0 y rm == 5: RIP-relativo + disp32.
+       mod == 1: disp8. En EVEX es disp8*N (compressed = true; no se
+         calcula la dirección).
+       mod == 2: disp32.
+  8) Inmediatos:
+       80, 82, 83, 6B, C0, C1, C6:      1 byte;
+       81, 69, C7:                      2 bytes con 66, si no 4;
+       F6 / F7 con reg < 2:             1 byte / 2 o 4 bytes;
+       mapa 1, opcodes de IMM8_0F:      1 byte;
+       mapa 3:                          1 byte.
+     El largo total solo se necesita para RIP-relativo:
+     EA = IP + largo + disp.
+  9) Nombre y orden de operandos:
+       ALU: el bit d (op & 2) indica registro <- memoria.
+       Grupos 80-83, C0/C1/D0-D3, F6/F7, FE, FF: el nombre sale del campo
+       reg.
+       SSE: SSE_0F indexado por pp (sin prefijo, 66, F3, F2); "v" delante
+       si es VEX/EVEX.
+       Enteros 0F: INT_0F (movzx, movsx, cmovcc, imul, bt*, xadd,
+       cmpxchg...).
+       Tamaño del operando de memoria:
+         byte para BYTEOP1; qword con REX.W; word con 66; dword en el
+         resto;
+         SSE: xmm/ymm/zmm según L; movss = dword, movsd = qword.
+analyzeInstruction:
+  - Lee 16, 12, 8 o 4 bytes en la IP con readCode (dump o archivo PE).
+  - EA = disp (+ IP+largo si es RIP-relativo) + base + index*scale,
+    truncada a 64 bits.
+  - eaMatches = (EA == dirección de la excepción); null cuando la dirección
+    es 0xFFFF...FFFF (#GP).
+  - Categoría de cada registro (ptrCategory):
+      null      < 0x10000
+      garbage   no canónico, o >= 0xFFFFFFFFFFFF0000
+      addr      cualquier otro valor
+      ok        addr en un fallo #GP (se informa así solo en el texto)
+  - Hallazgos:
+      f.instr, f.instr.reg (uno por registro);
+      f.instr.vcall: indirecto con algún registro inválido;
+      f.instr.vcallTarget: indirecto con #GP o garbage (vtable corrupta);
+      f.instr.copy: instrucción de string.
+
+
+13. CAMBIOS ENTRE DUMPS, NOTAS, CSV / JSON, CARPETAS PRIVADAS
+-----------------------------------------------------------
+- compare().changes[i] = { time, file, baseline, firstSeen[], updated[{name,
+  from, to}] }.
+  - Recorrido cronológico sobre a.thirdParty.
+  - lastVer guarda la última versión vista de cada módulo.
+  - El primer dump es la referencia (baseline).
+  - Nota c.culpritUpdated: el culpable del dump i aparece en updated[i].
+- Notas: archivo {format: "crash-dump-analyzer-notes", version: 1, notes:
+  [{module, version | "*", text (máx. 4000), date}]}.
+  - Coincidencia: nombre de módulo sin distinguir mayúsculas; versión "*" o
+    vacía = todas, si no, igual a fileVersion.
+  - notesForDump toma las notas del culpable y de a.suspects.
+- CSV: separador ';'; comillas RFC 4180 cuando el campo contiene ';', '"' o
+  un salto de línea; CRLF.
+  Columnas: dump_time, file, application, type, exception_code,
+  exception_name, culprit, culprit_version, culprit_kind, vendor,
+  confidence, reason, instruction, activity, process_private_mb,
+  ram_available_pct, commit_pct, warnings, first_frame.
+- JSON: los BigInt se serializan como hex '0x...'; no incluye memoria cruda.
+- privacyTokens(dumps):
+  - names: igual que collectUserNames.
+  - dirs: carpetas de las rutas de módulos que no coinciden con
+    STD_DIR_RE (^X:\(windows|program files|program files (x86)|programdata)\),
+    más toda carpeta bajo \Users\. Se ordenan de mayor a menor largo.
+  - anonymizeAll reemplaza cada dir por '<folder>\' (por substring exacto)
+    y después aplica anonymize(names).
+
+
+14. ÍCONO Y RUTAS TÍPICAS (1.2.1)
+--------------------------------
+- Ícono SVG, viewBox 64x64:
+    fondo: rect redondeado (rx 14) con gradiente #2b4a8a -> #121a33;
+    forma de onda: trazo de 3.6 con gradiente #7ad0ff -> #9f8cff;
+    grieta: #ff4d5e;
+    línea plana: #8a93a8;
+    lupa: anillo #e8edf7 con un pulso rojo adentro.
+  En el favicon va en una data URI codificada por porcentaje (cumple con
+  img-src data:). En el logo del encabezado va como SVG inline, con ids
+  renombrados para no chocar con otro SVG.
+- Icono\CrashDumpAnalyzer.ico: formato ICO con entradas PNG de 32 bits (16,
+  24, 32, 48, 64, 128 y 256), renderizadas por separado con Chromium desde
+  el SVG.
+- DUMP_PATHS: solo rutas con variables de entorno. Windows las expande en
+  la barra del Explorador y en los diálogos de archivo, así que el HTML no
+  contiene datos del usuario.
+
+
+15. NOMBRE (1.3.0)
+-----------------
+- El programa se llama "Crash Dump Analyzer"; hasta la 1.2.1 se llamaba
+  "Crash Dump Viewer".
+- El global CDV y los nombres internos de las funciones no cambian.
+- NOTES_FORMATS = ['crash-dump-analyzer-notes', 'crash-dump-viewer-notes'].
+  serializeNotes usa siempre el primero; parseNotes acepta los dos.
+
+
+16. FIRMA DE CRASH (1.4.0)
+-------------------------
+texto = kind | código de excepción | culpable (minúsculas) | versión |
+        punto de anclaje
+Punto de anclaje:
+  caída con faultModule   módulo del fallo + offset de la dirección de la
+                          excepción
+  caída sin módulo        faultSym
+  congelamiento           primer frame del culpable en el stack analizado
+id = "CDA-" + FNV-1a 32 (offset basis 0x811C9DC5, primo 0x01000193,
+     calculado sobre unidades UTF-16).
+compare(): c.sameSig cuando una firma aparece 2 o más veces; esa nota se
+inserta al principio.
+
+17. TIPO DE EXCEPCIÓN C++ (cxxExceptionType)
+-------------------------------------------
+Aplica a 0xE06D7363 con Info[2] = ThrowInfo y, en x64, Info[3] = base del
+módulo que lanzó la excepción.
+  ThrowInfo           +12  pCatchableTypeArray
+  CatchableTypeArray  +0   count (1..64)
+                      +4   CatchableType[] (se leen hasta 8)
+  CatchableType       +4   pType
+  TypeDescriptor      nombre en +16 (x64) o +8 (x86)
+En x64 todos los punteros son RVAs que se suman a la base. Los bytes se
+leen con readCode (dump o archivo PE). El nombre se lee con ventanas de
+256, 128, 64 o 32 bytes hasta encontrar el NUL.
+demangleTypeName:
+  .?AV / .?AU / .?AW4  se quita el prefijo y el '@@' final;
+  las partes separadas por '@' se invierten y se unen con '::';
+  plantillas (?$): se devuelven sin traducir.
+
+18. FIX FIRST (fixFirst)
+-----------------------
+Por cada culpable: count, last, high (alguna caída con confianza alta),
+versions y solved.
+  solved = el módulo tiene una nota c.updatedOk
+  score  = 10*count + 5 (si newest - last <= 90 días) + 2 (si high)
+           - 8 (si solved)
+Orden: no resueltos primero, luego score, luego el más reciente.
+Acción:
+  solved                                   fix.verify
+  aviso w.old o w.legacy                   fix.replace
+  audio-driver                             fix.driver
+  gpu                                      fix.gpu
+  host / host-component / vendor-component fix.host
+  system / runtime                         fix.system
+  resto                                    fix.update
+
+19. INFORME HTML / IMPRESIÓN (buildReportHTML)
+---------------------------------------------
+Devuelve { html, body, css }.
+- html: documento completo con su propia CSP
+  (default-src 'none'; style-src 'unsafe-inline'; img-src data:),
+  sin scripts.
+- body: <div class="rp">...</div>. REPORT_CSS va con alcance .rp.
+- Anonimizado: an(texto) se aplica antes del escape, así <user> y
+  <folder> quedan como texto literal.
+- Contenido:
+    con varios dumps: comparación, fix first y notas;
+    por dump: veredicto, culpable, hallazgos, acciones, notas, avisos,
+    memoria, instrucción, 24 frames y módulos de terceros.
+- Impresión: #printArea recibe <style>css</style>body. @media print oculta
+  todo lo demás (body > *:not(#printArea)). @page con margen de 12 mm.
+  Cada dump empieza en página nueva (page-break-before).
+
+20. DUMPS DE DEMOSTRACIÓN (DumpWriter / makeDump / demoDumps)
+------------------------------------------------------------
+- DumpWriter: buffer que crece según se necesita; alloc(n, align);
+  escritores u8, u16, u32 y u64 (los Number se redondean); str() escribe
+  un MINIDUMP_STRING.
+- makeDump(spec): escribe los streams 7, 15 (832 bytes), 4, 3, 5, 24,
+  22 (_2, 152 bytes), 21 (496 bytes) y, opcional, 6, con los mismos
+  offsets que usan los parsers.
+    CONTEXT x64 de 0x4D0 bytes, flags 0x10001F.
+    Stacks de 0x2000 bytes con RSP en +0x400; los valores del stack van
+    desde RSP hacia arriba.
+- demoDumps(): 4 dumps con módulos ficticios bajo
+  C:\Program Files\Example Audio\ y VST3\Example *.vst3.
+    1 y 2  AV de lectura en [rcx+0x18] (rcx=0) en el hilo "Audio Realtime
+           1"; misma firma.
+    3      freezedump: el hilo principal y "Example ASIO worker" esperan con
+           ExampleASIO64.dll; commit al 95%.
+    4      0xE06D7363 lanzado por Example Reverb con RTTI std::bad_alloc /
+           std::exception en base+0x50000; RAM libre 0,6 de 16 GB.
+- VENDOR_RULES incluye 'Example Audio (demo)'.
