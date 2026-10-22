@@ -1,0 +1,516 @@
+CRASH DUMP ANALYZER 1.6.0 - USER GUIDE (ENGLISH)
+================================================
+(Called "Crash Dump Viewer" up to 1.2.1.)
+
+Offline viewer for Windows minidumps (.dmp) and macOS reports (.ips / .crash
+crash reports, .hang / .spin hang reports) in a single HTML file. Made for
+DAWs (Cubase, Nuendo, etc.), but it works with any Windows x64, x86 or ARM64
+process and with any macOS application.
+
+macOS SUPPORT = BETA (1.5.0): the .ips/.crash/.hang reader was validated
+only with synthetic reports (the demo dumps) and with a hand-written test
+.crash. The author has no Mac: it has NOT been tested with real reports nor
+on a real Mac. Testers with Cubase .ips / .hang files are wanted. See 6c.
+
+
+1. USAGE
+--------
+1. Open CrashDumpAnalyzer.html (double-click) in Chrome, Edge or Firefox.
+2. Load the dumps in one of these ways:
+   - "Open crash files": pick files (.dmp, .mdmp, .hdmp, .ips, .crash,
+     .hang, .spin). The type is detected from the content, not from the
+     extension.
+   - "Open folder": every .dmp / .ips / .crash / .hang / .spin in the folder
+     and its subfolders is loaded.
+     Typical locations (also listed in the viewer under "Where are the
+     dumps?", with a Copy button):
+       Cubase / Nuendo / Dorico:
+         %USERPROFILE%\Documents\Steinberg\CrashDumps
+         (localised Windows shows Documents under its local name, e.g.
+         "Documentos" or "Dokumente")
+       Other programs (Windows Error Reporting, only if local dumps are
+       enabled):
+         %LOCALAPPDATA%\CrashDumps
+       macOS (every application; written by the system):
+         ~/Library/Logs/DiagnosticReports
+         /Library/Logs/DiagnosticReports   (all users; administrator)
+       In Finder: Go > Go to Folder... and paste the path. The same reports
+       appear in Console.app > Crash Reports.
+     The Windows path can be pasted as is into the File Explorer address
+     bar: Windows expands the variables.
+   - Drag files or folders onto the window. Folders are walked recursively.
+     Chrome/Edge/Brave limitation: with some paths (seen with a folder named
+     "@Source") the browser fails to read the dropped items (internal
+     EncodingError); since 1.5.0 single files still load and, for a folder,
+     the message "The browser could not read the dropped items…" appears:
+     use "Open folder".
+   - "Watch folder" (Chrome and Edge only): choose a folder once. "Rescan"
+     loads the new dumps. With "auto (15 s)" the folder is rescanned every
+     15 seconds while the page is open. The permission is not saved: the
+     folder has to be chosen again every time the page is opened.
+   A file that is already loaded (same name, size and date) is ignored.
+3. Choose a dump in the left list. With 2 or more dumps, "Compare all
+   dumps" appears. The ⚠ symbol means the dump has warnings or memory
+   pressure.
+4. EN / ES / DE switches the language (English, Spanish, German). The
+   default is English.
+5. Export:
+   - "Export report (.txt)": the selected dump, or the comparison.
+   - "Export all (.txt)": the comparison plus one report per dump.
+   - "Export CSV": one row per dump, ";" separator (Excel in European
+     locales), UTF-8 with BOM.
+   - "Export JSON": structured summary of every dump plus the comparison.
+     No raw process memory is included.
+   - "Hide memory figures in exports" (new in 1.5.0, off by default):
+     leaves every memory figure (installed and free RAM, commit, process
+     private memory and the findings that quote them) out of TXT, CSV,
+     JSON, the HTML/PDF report and the support summary. The interface still
+     shows them.
+   - "Anonymise exports" (on by default). Replaces:
+       * \Users\<name>\ with \Users\<user>\;
+       * the Windows user name (detected in module paths) with <user>;
+       * every folder that is not a standard Windows location with
+         <folder>\ (e.g. D:\My Samples\Kontakt\). Standard locations are
+         C:\Windows, C:\Program Files, C:\Program Files (x86) and
+         C:\ProgramData.
+       * in macOS reports (1.5.0): /Users/<name>/ with /Users/<user>/,
+         folders outside /System, /usr, /Library, /Applications, /private
+         with <folder>/, and the report identifiers (incident_id,
+         crashReporterKey, sleepWakeUUID, slice_uuid, Anonymous UUID) with
+         <id>.
+     Applies to TXT, CSV, JSON, HTML/PDF and the support summary.
+   .txt files are saved as UTF-8 with BOM and CRLF line endings.
+6. Exact stack (optional): with "Load module files" or by dragging files,
+   load the .dll, .vst3, .exe or .clap files involved. They are used only
+   when they are the same build the dump lists (identical TimeDateStamp
+   and SizeOfImage). The "Module file" column of the Modules tab shows
+   which ones matched. VST3 files live in
+   C:\Program Files\Common Files\VST3\<Plugin>.vst3\Contents\x86_64-win\.
+   The whole .vst3 folder can be dragged as well.
+
+6b. New in 1.4.0:
+   - "Load demo dumps": loads 4 synthetic dumps generated by the page
+     itself, with fictional software (DemoDAW, Example Synth...) and no real
+     data. They show every feature: a repeated bug with the same signature,
+     a freeze with a possible deadlock, a C++ std::bad_alloc exception with
+     low RAM, a plugin loaded as VST2 and VST3, an old binary and an update
+     that solved a plugin.
+   - "Export report (.html)": self-contained report (no scripts, own CSP,
+     light theme) of the selected dump, or of all of them when the
+     comparison is open. "Anonymise exports" applies.
+   - "Print / PDF": the same report through the browser print dialog. To
+     get a PDF choose "Save as PDF" or "Microsoft Print to PDF".
+   - Crash signature: CDA-XXXXXXXX. Computed from
+     kind | code | culprit module | version | code location.
+     Same signature = same bug in the same build. Shown in the verdict, the
+     comparison, the support summary, TXT, CSV and JSON.
+   - C++ exception type (e.g. std::bad_alloc), read from the MSVC RTTI
+     structures. Needs that memory in the dump, or the module file loaded.
+   - Comparison > "Fix first": ranking of culprit modules with a suggested
+     action.
+
+6c. New in 1.5.0: macOS reports (BETA)
+   - Formats:
+       .ips    macOS 12 or later. First line: JSON header (app_name,
+               timestamp, bug_type, os_version, incident_id). Rest: JSON
+               document with procName, procPath, bundleInfo, exception
+               {type, signal, codes, subtype}, termination, asi (Application
+               Specific Information), threads [frames, threadState] and
+               usedImages [base, size, path, uuid, version].
+               Crash reports (bug_type 309, with threads and usedImages) and
+               hang reports (bug_type 288, see .hang) are accepted. Any
+               other type is rejected with "macOS report type N is not
+               supported".
+       .hang   macOS 13 or later (also .spin, or a .ips with bug_type 288):
+               JSON header + spindump text. The target process section (the
+               first "Process:") is read, every "Thread 0x..." with its
+               DispatchQueue / Thread name and sample count, and from its
+               call tree the heaviest branch (first child at each level;
+               spindump sorts by samples) becomes the stack, leaf to root.
+               "Binary Images:" gives the modules. It is analysed as a
+               freeze (main thread, possible deadlock) and reports
+               "Duration" and "Steps".
+       .crash  macOS 10.x / 11 (text): Process, Path, Version, Code Type,
+               Date/Time, OS Version, Crashed Thread, Exception Type,
+               Exception Codes, Application Specific Information, "Thread N
+               Crashed::" blocks, register state and Binary Images.
+   - What you get: the same diagnosis as on Windows (verdict, culprit with
+     confidence, findings, actions, CDA-XXXXXXXX signature, thread
+     overview, VST2+VST3 warnings, activity), the comparison with "Fix
+     first", notes, and every export.
+   - Culprit: top frame of the crashed thread when it belongs to a
+     non-system module (high confidence); when the crash was inside macOS,
+     the first non-system frame (medium); when only macOS frames exist
+     (low). With an uncaught C++ or Objective-C exception (text in ASI) the
+     first non-system frame is the culprit and the type is shown (e.g.
+     std::bad_alloc). With an invalid code signature (termination namespace
+     CODESIGNING) the culprit is the module whose path appears in the text.
+   - Exceptions explained: EXC_BAD_ACCESS (with NULL / garbage / unmapped /
+     inside-a-module address, as on Windows), EXC_CRASH (abort(), uncaught
+     exception, kill, invalid signature), EXC_BREAKPOINT,
+     EXC_BAD_INSTRUCTION, EXC_ARITHMETIC, EXC_GUARD, EXC_RESOURCE,
+     EXC_CORPSE_NOTIFY.
+   - New module kind: Audio Unit (.component). Also classified: .vst3,
+     .vst, .clap, .aaxplugin, Core Audio HAL plug-ins (audio driver),
+     PACE/iLok, Melodyne/ARA, GPU drivers (AGX, AMDRadeon, AppleIntel),
+     Apple frameworks (system) and runtimes (libc++, libobjc, libswift,
+     libdispatch, libsystem_*).
+   - Modules are named after their bundle (Serum.vst3, Kontakt.component)
+     so that they match the Windows names in the comparison.
+   - Rosetta 2: when the report says translated=true a warning is shown
+     and native Apple-silicon builds are suggested.
+   - Threads: "waiting" = top frame in libsystem_kernel or
+     libsystem_pthread. Frames are symbolicated by macOS (method "exact
+     (symbolicated)"); there is no heuristic scan and no unwinding. The
+     Threads tab shows name, dispatch queue and, in hang reports, the
+     sample count of every thread.
+   - Not available on macOS: memory counters (the .ips has none),
+     faulting-instruction decoding, module-file loading. "Watch folder"
+     does load .ips/.crash/.hang files.
+   - Tabs: "Raw streams" is replaced by "Raw report" (header,
+     exception/termination/ASI as received, image table with UUID and
+     architecture). "Exception & registers" shows type, signal, codes,
+     subtype, ASI, registers (ARM64: x0..x28, fp, lr, sp, pc, cpsr, far,
+     esr; x86-64: rax..r15, rip, rflags, cr2) and "VM region info".
+   - Demo: "Load demo dumps" now loads 7 items: the 4 Windows .dmp and 3
+     macOS reports (DemoDAW 1.2.0 on a fictional Mac):
+       5) EXC_BAD_ACCESS inside Example Sampler.vst3, audio thread, native
+          Apple silicon;
+       6) SIGABRT from an uncaught std::bad_alloc thrown by Example
+          Reverb.component (Audio Unit), application under Rosetta 2;
+       7) .hang: the main thread waits inside Example Sampler.vst3 and the
+          plugin's loader thread waits too -> possible deadlock, 3.00 s,
+          15 samples.
+     With Windows and macOS mixed, the comparison warns that names and
+     signatures are not comparable across platforms.
+   - Loading a file that is neither a minidump nor a macOS report gives
+     "not a Windows minidump (.dmp) nor a macOS crash report (.ips /
+     .crash)".
+
+6d. New in 1.6.0: confidence with evidence, MIDI, heap, patterns, AI, diagrams
+   - Confidence score 0-100 ("Score NN/100" next to the high / medium / low
+     label, which is unchanged) and a "Why this confidence" card with every
+     piece of evidence and its sign: rule used (+20 to +60), module on other
+     threads (+15), instruction with a NULL/invalid pointer (+15), NULL/
+     invalid address (+10), deadlock (+10), known C++ type (+8), old binary /
+     legacy / VST2+VST3 (+5), module within the first 3 frames (+5), memory
+     pressure (-10), system code only (-10), heap corruption (-15), /GS
+     cookie (+10), fewer than 3 frames (-5). Clamped to 5..95. At 50 or
+     below: "treat the culprit as a lead, not a verdict". The score goes to
+     TXT, HTML/PDF, JSON and the support summary.
+   - Cross-thread evidence (Windows): when the crashed thread only shows
+     Windows code (rules stack / fault-system / none) and ONE tier-1 plugin
+     is active on 2 or more threads, that plugin becomes the culprit with
+     reason "cross-thread" (medium confidence) and the verdict "…{module}
+     is the strongest suspect: it is active on N threads".
+   - MIDI: module kind "MIDI driver / MIDI stack" for Windows MIDI Services
+     (Windows.Devices.Midi2.dll, Midi2.*.dll,
+     Microsoft.Windows.Devices.Midi2.dll), WinRT MIDI
+     (Windows.Devices.Midi.dll), classic MIDI (midimap.dll, wdmaud.drv),
+     vendor MIDI drivers (name containing "midi") and, on Mac, CoreMIDI
+     drivers (/Library/Audio/MIDI Drivers). Activity "handling MIDI".
+     Actions: fault inside Windows MIDI Services -> report with the dump at
+     github.com/microsoft/MIDI; test with the device unplugged / another
+     port; update the vendor driver. New vendors: Roland, Korg, Akai,
+     Novation, M-Audio, iConnectivity, Microsoft (Windows MIDI Services).
+   - Heap corruption (0xC0000374) and fast-fail 3/10/11: a finding explains
+     that the module that noticed it is not necessarily the culprit, an
+     action with gflags /p /enable <exe> /full (page heap) and a -15 score
+     penalty. Fast-fail 2 (/GS cookie): the overflowing function is located
+     reliably (+10).
+   - Known patterns (public facts only), reported when the module is on the
+     analysed stack: PACE/iLok (wrappersist, paceeden, tpkd), WebView2,
+     Thesycon USB audio (tusbaudio), ASIO4ALL, old C runtimes
+     (msvcr70..120), GDI/GDI+, D3D shader compiler.
+   - "Copy prompt for an AI second opinion" (Support summary tab): English
+     text with instructions for an AI assistant, the summary, the score with
+     evidence, the findings, the exception, the first 16 frames of ALL
+     threads and the third-party modules. Anonymised like every export;
+     copy and download (.txt) buttons. The page still connects to nothing.
+   - Diagrams in Diagnosis: "Stack map" (one bar per frame of the analysed
+     thread, coloured: culprit / third party / application / system) and
+     "Thread map" (one box per relevant thread; ⚠ crashed, ★ main, ● has
+     the culprit; dashed line = possible deadlock). Inline SVG, no
+     dependencies, follows the dark theme.
+
+7. Personal notes ("Import notes" / "Export notes"):
+   - In the Diagnosis tab, the "My notes" card lets you write a note for
+     the culprit or for any third-party module, for every version or only
+     for the loaded version.
+   - Notes live only while the page is open: "Export notes" saves them to
+     crash-dump-analyzer-notes.json and "Import notes" loads them again
+     (without duplicates). Files exported by 1.2.x (format
+     "crash-dump-viewer-notes") are still accepted.
+   - When the culprit or a module on the stack has notes, they appear in
+     the diagnosis and in the .txt report. In the comparison the culprit is
+     marked with 📝.
+   - "Clear" does not delete notes.
+
+8. Icon:
+   - The favicon and the header logo are embedded in the HTML as SVG.
+   - The Icono\ folder (icon/ in the repository) contains:
+       CrashDumpAnalyzer.ico      16, 24, 32, 48, 64, 128 and 256 px
+       CrashDumpAnalyzer-256.png
+       CrashDumpAnalyzer.svg
+   - For a shortcut with an icon (Windows):
+       1) Right-click CrashDumpAnalyzer.html > Show more options > Create
+          shortcut.
+       2) Shortcut properties > Change icon > pick CrashDumpAnalyzer.ico.
+
+To share the viewer, send CrashDumpAnalyzer.html alone.
+
+
+2. TABS
+-------
+Diagnosis
+  Contains, in this order:
+  - Verdict and likely culprit.
+  - "What happened": exception, pointer analysis, thread, activity,
+    memory, thread summary, possible deadlock and running time.
+  - "What to do".
+  - Warnings (⚠).
+  - Memory at the moment of the dump.
+  - Overview of all threads (only those not idle-waiting, plus the main
+    thread, the faulting thread and those with the culprit on their stack).
+  - Other modules seen on the stack.
+  - Third-party module table with link date.
+Support summary
+  English text ready to send to the vendor: application, OS, time,
+  exception, module with version, link date and PDB id (UUID on macOS),
+  thread, activity, memory, 24 frames and third-party modules. Has a Copy
+  button; when the clipboard is not available it uses document.execCommand.
+Exception & registers
+  Adds the "Faulting instruction" card: approximate disassembly of the
+  faulting instruction, its bytes, the registers used to compute the
+  address and the resulting address compared with the exception's. Code
+  bytes come from the dump or, when missing, from the loaded module file.
+  macOS: type, signal, codes, subtype, ASI, registers, VM region info.
+Stack
+  Frames with a "Method" column: exact (unwound), scan or, on macOS, exact
+  (symbolicated).
+Threads
+  Adds the State and "First non-Windows module" columns. When the culprit
+  module is on the thread's stack it is marked "culprit". macOS: name,
+  dispatch queue and sample count (hang reports).
+Modules
+  Adds the "Module file" column (✓ when the file was loaded and matched).
+System & process
+  Adds the memory card. macOS: OS, architecture, Rosetta, Mac model, bundle
+  id, report type, incident id, hang duration.
+Raw streams / Raw report
+  Windows: stream directory, comments, parser warnings. macOS: header,
+  exception/termination/ASI, image table.
+Compare all dumps
+  - Timeline: one lane per application version; red = crash, amber =
+    freeze.
+  - Comparison table with the culprit's version.
+  - Reading (automatic notes).
+  - Culprit frequency.
+  - Module changes between dumps: versions that changed (also drivers such
+    as NVIDIA or the licensing one) and modules seen for the first time.
+  - Versions of every culprit module across the dumps.
+  - Third-party modules present in 2 or more dumps.
+
+
+3. HOW THE CULPRIT IS CHOSEN
+----------------------------
+Crash (there is an ExceptionStream). The first matching rule applies:
+  a) 0xE06D7363 (MSVC C++ exception): ExceptionInformation[3] is the base
+     of the module that threw.                                 High confidence.
+  b) The faulting address is inside a module that is neither Windows nor
+     the runtime.                                               High confidence.
+  c) The faulting address is inside an unloaded module.        High confidence.
+  d) The fault happened inside Windows or the runtime: the first
+     non-Windows module on the stack is taken.                  Medium.
+  e) Only Windows code appears.                                 Low.
+Freeze (no ExceptionStream and the file name contains freeze, hang,
+deadlock or watchdog; otherwise the dump is treated as a snapshot):
+  The first tier-1 module (plugin, audio driver, ARA, copy protection or
+  third party) on the main thread stack is taken; if none, the first tier-2
+  module (vendor component, WebView or graphics driver). Medium confidence
+  for tier 1, low for tier 2.
+macOS: see 6c.
+
+ACCESS_VIOLATION (0xC0000005 / 0xC0000006):
+  Operation (ExceptionInformation[0]): 0 read, 1 write, 8 execute (DEP).
+  The accessed address is classified as:
+    null      below 0x10000
+    garbage   0xFFFFFFFFFFFFFFFF, or non-canonical on x64
+    unloaded  inside an already unloaded module
+    module    inside a loaded module
+    gp        0xFFFFFFFFFFFFFFFF: Windows does not know the address
+              (general-protection fault, non-canonical pointer)
+    unmapped  anything else
+    exec      operation 8
+0xC0000409: the FAST_FAIL_* code is taken from ExceptionInformation[0].
+
+
+4. ANALYSES ADDED IN 1.1.0
+--------------------------
+Memory (ProcessVmCounters and SystemMemoryInfo streams):
+  Shows the process private memory, its working set and peak, pagefile
+  usage, installed and available RAM, and the system commit against its
+  limit.
+  Alert thresholds:
+    - Free RAM below 8% or below 1.5 GiB.
+    - Commit at 90% of the limit or more.
+    - Process using 60% of the RAM or more.
+  Every alert adds an action (reduce the load or enlarge the pagefile).
+Warnings:
+  - VST2 + VST3: the same plugin loaded in both formats. Names are compared
+    normalised (no extension, spaces, "x64" or "64bit").
+  - Old binary: PE link date more than 6 years before the dump. Ignored
+    when the date falls outside the range between the year 2000 and the
+    dump date.
+  - Legacy: only plugins the vendor itself lists as legacy. Today: Stylus
+    RMX (spectrasonics.net/instruments/stylusrmx.html).
+Activity ("what it was doing"):
+  Inferred from the modules in the top 30 stack frames:
+    ui      user32, gdi, d2d1, dwrite, d3d, dxgi, opengl, msctf or graphics
+            driver (macOS: AppKit, CoreGraphics, QuartzCore...)
+    dialog  shell32, comdlg32, windows.storage
+    net     winhttp, wininet, ws2_32, licensing or copy protection
+    audio   audioses, mmdevapi, avrt, ksuser, winmm or ASIO driver
+            (macOS: CoreAudio, AudioToolbox, CoreMIDI)
+    media   Media Foundation (macOS: AVFoundation, CoreMedia)
+    web     WebView2
+    ara     ARA / Melodyne
+  On an audio thread the activity always starts with "processing audio".
+Thread overview:
+  - State of every thread by where its IP is: wait (ntdll or win32u, i.e.
+    inside a system call; macOS: libsystem_kernel / libsystem_pthread),
+    third (third-party code), host (the application) or sys (another OS
+    module).
+  - First non-OS module on every thread's stack (up to 32 frames scanned).
+  - Possible deadlock (freezes only): the main thread is in wait and other
+    waiting threads have the culprit on their stack, provided the culprit
+    is tier 1 or 2.
+  - Crash: lists the other threads that have the culprit on their stack.
+  - Freeze: lists the threads that were running third-party code.
+Comparison:
+  - c.updatedOk: the culprit changed version in later dumps and was not
+    the culprit again.
+  - c.updatedStill: the same module was the culprit with different
+    versions.
+  - c.sameVersion: the same module was the culprit two or more times with
+    the same version.
+  - c.warnMany: the same warning appears in 2 or more dumps.
+
+
+4b. ANALYSES ADDED IN 1.2.0
+---------------------------
+Faulting instruction (x64 only):
+  Decodes prefixes, REX, VEX/EVEX, the 1-byte, 0F, 0F38 and 0F3A maps,
+  ModRM/SIB/disp (including RIP-relative) and immediates. With the context
+  registers it computes the effective address.
+  Every register used is classified as:
+    null      below 0x10000
+    garbage   non-canonical
+    addr      normal address
+    ok        normal address, but the fault is a #GP: the invalid value is
+              what was read from that memory
+  Additional findings:
+    - Virtual call: indirect call or jmp with an invalid register.
+    - Virtual call with #GP: the function table was corrupt.
+    - Copy instructions (movs, stos, lods): implicit RSI and RDI pointers.
+Changes between dumps:
+  Dumps are walked in chronological order and the last version seen of
+  every third-party module is kept. A version change is reliable. "Seen for
+  the first time" depends on which plugins were used in each session.
+  Note c.culpritUpdated: the culprit had just changed version in that
+  dump.
+
+5. LIMITATIONS
+--------------
+- No symbols (.pdb) are used. Without loaded module files the stack is
+  heuristic.
+- Exact unwinding works on x64 only and stops at the first frame of a
+  module whose file was not loaded. From there a heuristic scan continues.
+  It does not detect an IP inside an epilogue in the first frame.
+- Function names come only from the export table. Plugins export very few
+  functions, so "fn 0x1A2B0+0x12" (function start per .pdata) is what you
+  usually see.
+- The decoder is not a full disassembler: uncommon instructions are shown
+  as "op 0F xx", although their memory operand is decoded. With EVEX and
+  compressed disp8 the address is not computed.
+- A module file larger than 768 MB is ignored, because it is read whole
+  into memory.
+- Without ThreadInfoListStream (Cubase's case) the main thread is the
+  first one in ThreadList not named watchdog, audio, prefetch, worker or
+  pool.
+- "wait" state: an IP inside ntdll or win32u does not tell an idle thread
+  from a blocked one. "Possible deadlock" is a hint, not a proof.
+- Folder watching needs the File System Access API. Firefox does not have
+  it.
+- Dropping a folder may fail in Chrome/Edge/Brave depending on the path
+  (webkitGetAsEntry returns EncodingError). Single files work; for the
+  folder use "Open folder".
+- macOS (beta): not validated with real reports. In .hang files only the
+  target process and the heaviest branch of every thread are read (not the
+  whole tree). Function names depend on the report being symbolicated
+  (normal for Apple frameworks; plugins usually show module+offset only).
+  Vendor rules are tested on the path with "/" turned into "\", so vendor
+  detection on Mac is poorer than on Windows.
+
+
+7. PRIVACY AND NETWORK
+----------------------
+- The CSP sets connect-src 'none' and default-src 'none': the page can
+  neither open connections nor load external resources.
+- No localStorage, cookies or IndexedDB. The watched-folder permission and
+  the notes live only in the open tab.
+- The viewer reads nothing from the computer on its own: only the files
+  the user picks or drags.
+- A .dmp contains process memory. Sharing the viewer does not share any
+  dump.
+
+
+8. HISTORY
+----------
+1.6.0  2026-10-22  Confidence score 0-100 with evidence and "lead, not a
+       verdict" warning; cross-thread evidence rule; MIDI module kind
+       (Windows MIDI Services, CoreMIDI, drivers) with actions; heap
+       corruption / fast-fail reasoning (page heap, /GS cookie); known
+       patterns table; AI second-opinion prompt; SVG stack and thread
+       diagrams. Prompted by the Steinberg forum thread (Psychlist1972 /
+       Microsoft). No parser changes; same 7 culprits.
+1.5.0  2026-10-22  macOS (BETA): .ips (macOS 12+) and .crash (macOS 10.x/11)
+       reports in the same HTML, with the same diagnosis, signature,
+       comparison, Fix first, notes and exports; Audio Unit module kind;
+       EXC_* exceptions; uncaught C++/ObjC exceptions from ASI; invalid
+       code signature; Rosetta 2 warning; anonymisation of /Users/<name>/
+       and report identifiers; 2 macOS demo reports; macOS paths in "Where
+       are the dumps?"; "Raw report" tab. Hang reports .hang / .spin
+       (spindump) with duration, samples per thread and deadlock detection.
+       Threads tab with queue and samples on Mac. "Hide memory figures in
+       exports" option. Fix for the "My notes" module selector in the dark
+       theme (color-scheme + <select> styles). 67 new EN/ES/DE keys (441
+       per language). More comments in the UI block; CORE sections
+       renumbered (1 to 13). Synthetic x86 dump test in core_test.js.
+       Complete guides in English and German (docs/README-en.txt,
+       README-de.txt).
+1.4.1  2026-10-21  Fix: the favicon was not shown. The icon's data URI had
+       unencoded quotes and '#': the quote closed the href attribute after
+       32 characters. The SVG is now fully encoded. No other changes.
+1.4.0  2026-10-21  Crash signature; C++ exception type; "Fix first" ranking;
+       self-contained HTML report and Print / PDF; synthetic demo dumps;
+       German interface. The instruction decoder no longer runs on software
+       exceptions (C++, fast-fail, breakpoint, .NET).
+1.3.0  2026-10-21  New name: "Crash Dump Analyzer" (file CrashDumpAnalyzer.html,
+       icons CrashDumpAnalyzer.*). Notes format "crash-dump-analyzer-notes";
+       1.2.x files still accepted. No analysis changes.
+1.2.1  2026-10-21  Application icon (embedded favicon and SVG logo, plus
+       .ico, .png and .svg files); "Where are the dumps?" panel with generic
+       paths and a Copy button (card on the start screen and collapsible
+       section in the sidebar).
+1.2.0  2026-10-21  Decoding of the faulting x64 instruction; #GP category;
+       module changes between dumps; personal notes (JSON); CSV and JSON
+       export; anonymisation of non-standard folders.
+1.1.0  2026-10-20  Process and system memory; warnings (VST2+VST3, old
+       binaries, legacy); activity; all-threads overview with possible
+       deadlock; timeline and version history in the comparison; English
+       support summary with copy button; anonymised export; folder opening
+       (button and recursive drag & drop); folder watching; exact x64 stack
+       with module files (exports, .pdata, UNWIND_INFO). Fixed the
+       MINIDUMP_PROCESS_VM_COUNTERS_2 layout.
+1.0.0  2026-10-18  First version.

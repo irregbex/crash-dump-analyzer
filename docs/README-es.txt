@@ -1,19 +1,27 @@
-CRASH DUMP ANALYZER 1.4.1 - GUÍA EN ESPAÑOL
+CRASH DUMP ANALYZER 1.6.0 - GUÍA EN ESPAÑOL
 ==========================================
 (Hasta la 1.2.1 se llamaba "Crash Dump Viewer".)
 
-Visor offline de minidumps de Windows (.dmp) en un solo archivo HTML.
+Visor offline de minidumps de Windows (.dmp) y de informes de macOS (.ips /
+.crash de crash, .hang / .spin de congelamiento) en un solo archivo HTML.
 Pensado para DAWs (Cubase, Nuendo, etc.), pero sirve con cualquier proceso
-Windows x64, x86 o ARM64.
+Windows x64, x86 o ARM64 y con cualquier aplicación de macOS.
+
+SOPORTE DE macOS = BETA (1.5.0): el lector de .ips/.crash/.hang se validó solo
+con informes sintéticos (los dumps demo) y con un .crash de prueba escrito a
+mano. El autor no tiene Mac: NO se probó con informes reales ni en un Mac
+real. Se necesitan probadores con .ips / .hang de Cubase. Ver sección 6c.
 
 
 1. USO
 ------
 1. Abrir CrashDumpAnalyzer.html (doble clic) en Chrome, Edge o Firefox.
 2. Cargar los dumps de una de estas formas:
-   - "Open .dmp files": seleccionar archivos.
-   - "Open folder": se cargan todos los .dmp de la carpeta y sus
-     subcarpetas.
+   - "Open crash files": seleccionar archivos (.dmp, .mdmp, .hdmp, .ips,
+     .crash, .hang, .spin). El tipo se detecta por el contenido, no por la
+     extensión.
+   - "Open folder": se cargan todos los .dmp / .ips / .crash / .hang / .spin
+     de la carpeta y sus subcarpetas.
      Rutas típicas (también aparecen en el visor, en "Where are the
      dumps?", con botón Copy):
        Cubase / Nuendo / Dorico:
@@ -23,10 +31,19 @@ Windows x64, x86 o ARM64.
        Otros programas (Windows Error Reporting, si los dumps locales
        están activados):
          %LOCALAPPDATA%\CrashDumps
+       macOS (cualquier aplicación; los escribe el sistema):
+         ~/Library/Logs/DiagnosticReports
+         /Library/Logs/DiagnosticReports   (todos los usuarios; admin)
+       En el Finder: Ir > Ir a la carpeta... y pegar la ruta. También se ven
+       en Consola.app > Informes de fallo.
      La ruta se puede pegar tal cual en la barra de direcciones del
      Explorador: Windows expande las variables.
    - Arrastrar archivos o carpetas a la ventana. Las carpetas se recorren
-     de forma recursiva.
+     de forma recursiva. Limitación de Chrome/Edge/Brave: con algunas rutas
+     (visto con la carpeta "@Source") el navegador falla al leer lo
+     arrastrado (EncodingError interno); desde 1.5.0 los archivos sueltos se
+     cargan igual y, si era una carpeta, aparece el aviso "The browser could
+     not read the dropped items…": usar "Open folder".
    - "Watch folder" (solo Chrome y Edge): se elige una carpeta una vez.
      "Rescan" carga los dumps nuevos. Con "auto (15 s)" se re-escanea cada
      15 segundos mientras la página esté abierta. El permiso no queda
@@ -45,6 +62,11 @@ Windows x64, x86 o ARM64.
      UTF-8 con BOM.
    - "Export JSON": resumen estructurado de cada dump más la comparación.
      No incluye memoria cruda del proceso.
+   - "Hide memory figures in exports" (nuevo en 1.5.0, desactivado por
+     defecto): deja fuera de TXT, CSV, JSON, informe HTML/PDF y resumen
+     para soporte todas las cifras de memoria (RAM instalada y libre,
+     commit, memoria privada del proceso y los hallazgos que las citan). La
+     interfaz sigue mostrándolas.
    - "Anonymise exports" (activado por defecto). Reemplaza:
        * \Users\<nombre>\ por \Users\<user>\;
        * el nombre de usuario de Windows (detectado en las rutas de los
@@ -53,7 +75,12 @@ Windows x64, x86 o ARM64.
          <folder>\ (ej. D:\Mis Samples\Kontakt\). Las ubicaciones
          estándar son C:\Windows, C:\Program Files,
          C:\Program Files (x86) y C:\ProgramData.
-     Se aplica a TXT, CSV, JSON y al resumen para soporte.
+       * en informes de macOS (1.5.0): /Users/<nombre>/ por /Users/<user>/,
+         carpetas fuera de /System, /usr, /Library, /Applications, /private
+         por <folder>/, y los identificadores del informe (incident_id,
+         crashReporterKey, sleepWakeUUID, slice_uuid, Anonymous UUID) por
+         <id>.
+     Se aplica a TXT, CSV, JSON, HTML/PDF y al resumen para soporte.
    Los .txt se guardan en UTF-8 con BOM y saltos CRLF.
 6. Stack exacto (opcional): con "Load module files" o arrastrando archivos,
    se cargan los .dll, .vst3, .exe o .clap involucrados. Se usan solo si
@@ -86,6 +113,134 @@ Windows x64, x86 o ARM64.
      cargado el archivo del módulo.
    - Comparación > "Fix first": ranking de módulos culpables con acción
      sugerida.
+
+6c. Nuevo en 1.5.0: informes de crash de macOS (BETA)
+   - Formatos:
+       .ips    macOS 12 o superior. Primera línea: JSON de cabecera
+               (app_name, timestamp, bug_type, os_version, incident_id).
+               Resto: documento JSON con procName, procPath, bundleInfo,
+               exception {type, signal, codes, subtype}, termination, asi
+               (Application Specific Information), threads [frames,
+               threadState] y usedImages [base, size, path, uuid, versión].
+               Se aceptan informes de crash (bug_type 309, con threads y
+               usedImages) y de congelamiento (bug_type 288, ver .hang).
+               Otro tipo se rechaza con el mensaje "macOS report type N is
+               not supported".
+       .hang   macOS 13 o superior (también .spin, o un .ips con bug_type
+               288): cabecera JSON + texto spindump. Se lee la sección del
+               proceso objetivo (la primera "Process:"), cada "Thread 0x..."
+               con su DispatchQueue / Thread name y cantidad de muestras, y
+               de su árbol de llamadas se toma la rama más cargada (primer
+               hijo en cada nivel; spindump ordena por muestras) como stack,
+               de la hoja a la raíz. "Binary Images:" da los módulos. Se
+               analiza como congelamiento (hilo principal, posible deadlock)
+               e informa "Duration" y "Steps".
+       .crash  macOS 10.x / 11 (texto): Process, Path, Version, Code Type,
+               Date/Time, OS Version, Crashed Thread, Exception Type,
+               Exception Codes, Application Specific Information, bloques
+               "Thread N Crashed::", estado de registros y Binary Images.
+   - Qué se obtiene: el mismo diagnóstico que en Windows (veredicto,
+     culpable con confianza, hallazgos, acciones, firma CDA-XXXXXXXX,
+     resumen de hilos, avisos VST2+VST3, actividad), la comparación con
+     "Fix first", notas, y todas las exportaciones.
+   - Culpable: frame superior del hilo que falló si es de un módulo que no
+     es del sistema (confianza alta); si falló dentro de macOS, el primer
+     frame que no sea del sistema (media); si solo hay frames de macOS
+     (baja). Con excepción C++ u Objective-C no capturada (texto en ASI),
+     el primer frame no-sistema es el culpable y se muestra el tipo (ej.
+     std::bad_alloc). Con firma de código inválida (termination namespace
+     CODESIGNING) el culpable es el módulo cuya ruta aparece en el texto.
+   - Excepciones explicadas: EXC_BAD_ACCESS (con dirección nula / basura /
+     no mapeada / dentro de un módulo, como en Windows), EXC_CRASH
+     (abort(), excepción no capturada, kill, firma inválida),
+     EXC_BREAKPOINT, EXC_BAD_INSTRUCTION, EXC_ARITHMETIC, EXC_GUARD,
+     EXC_RESOURCE, EXC_CORPSE_NOTIFY.
+   - Tipos de módulo nuevos: Audio Unit (.component). Se clasifican
+     también .vst3, .vst, .clap, .aaxplugin, plug-ins HAL de Core Audio
+     (driver de audio), PACE/iLok, Melodyne/ARA, drivers de GPU (AGX,
+     AMDRadeon, AppleIntel), frameworks de Apple (sistema) y runtimes
+     (libc++, libobjc, libswift, libdispatch, libsystem_*).
+   - Los módulos se nombran por el bundle (Serum.vst3, Kontakt.component)
+     para que coincidan con los nombres de Windows en la comparación.
+   - Rosetta 2: si el informe dice translated=true se avisa y se sugiere
+     usar versiones nativas para Apple Silicon.
+   - Hilos: el estado "waiting" es frame superior en libsystem_kernel o
+     libsystem_pthread. Los frames vienen simbolizados por macOS (método
+     "exact (symbolicated)"); no hay escaneo heurístico ni desenrollado.
+     La pestaña Threads muestra nombre, cola (dispatch queue) y, en informes
+     de congelamiento, la cantidad de muestras de cada hilo.
+   - No disponible en macOS: contadores de memoria (el .ips no los trae),
+     decodificación de la instrucción que falló, carga de archivos de
+     módulos, vigilancia de carpeta con .ips (sí funciona: "Watch folder"
+     también carga .ips/.crash).
+   - Pestañas: "Raw streams" se reemplaza por "Raw report" (cabecera,
+     excepción/terminación/ASI tal como vienen, tabla de imágenes con
+     UUID y arquitectura). "Exception & registers" muestra tipo, señal,
+     códigos, subtipo, ASI, registros (ARM64: x0..x28, fp, lr, sp, pc,
+     cpsr, far, esr; x86-64: rax..r15, rip, rflags, cr2) y "VM region
+     info".
+   - Demo: "Load demo dumps" ahora carga 7 elementos: los 4 .dmp de
+     Windows y 3 informes de macOS (DemoDAW 1.2.0 en un Mac ficticio):
+       5) EXC_BAD_ACCESS en Example Sampler.vst3, hilo de audio, Apple
+          Silicon nativo;
+       6) SIGABRT por std::bad_alloc no capturada lanzada por Example
+          Reverb.component (Audio Unit), aplicación bajo Rosetta 2;
+       7) .hang: el hilo principal espera dentro de Example Sampler.vst3 y
+          el hilo cargador del plugin también espera -> posible deadlock,
+          3,00 s, 15 muestras.
+     Con Windows y macOS mezclados, la comparación avisa que nombres y
+     firmas no son comparables entre plataformas.
+   - Al cargar un archivo que no es ni minidump ni informe de macOS, el
+     mensaje es "not a Windows minidump (.dmp) nor a macOS crash report
+     (.ips / .crash)".
+
+6d. Nuevo en 1.6.0: confianza con evidencia, MIDI, heap, patrones, IA, diagramas
+   - Puntaje de confianza 0-100 ("Score NN/100" junto a la confianza alta /
+     media / baja, que no cambia) y tarjeta "Why this confidence" con cada
+     evidencia y su signo: regla usada (+20 a +60), módulo en otros hilos
+     (+15), instrucción con puntero nulo/inválido (+15), dirección nula/
+     inválida (+10), deadlock (+10), tipo C++ conocido (+8), binario viejo /
+     legacy / VST2+VST3 (+5), módulo en los 3 primeros frames (+5), presión
+     de memoria (-10), solo código del sistema (-10), corrupción de heap
+     (-15), cookie /GS (+10), menos de 3 frames (-5). Entre 5 y 95. Con 50 o
+     menos aparece "Trata al culpable como pista, no como veredicto". El
+     puntaje va al TXT, HTML/PDF, JSON y al resumen para soporte.
+   - Evidencia cruzada de hilos (Windows): si el hilo que falló solo muestra
+     código de Windows (reglas stack / fault-system / none) y UN solo plugin
+     de nivel 1 está activo en 2 o más hilos, ese plugin pasa a culpable con
+     razón "cross-thread" (confianza media) y veredicto "…{module} es el
+     sospechoso más fuerte: está activo en N hilos".
+   - MIDI: tipo de módulo "MIDI driver / MIDI stack" para Windows MIDI
+     Services (Windows.Devices.Midi2.dll, Midi2.*.dll,
+     Microsoft.Windows.Devices.Midi2.dll), WinRT MIDI
+     (Windows.Devices.Midi.dll), MIDI clásico (midimap.dll, wdmaud.drv),
+     drivers MIDI de fabricantes (nombre con "midi") y, en Mac, drivers
+     CoreMIDI (/Library/Audio/MIDI Drivers). Actividad "manejando MIDI".
+     Acciones: si el fallo está en Windows MIDI Services, reportar con el
+     dump en github.com/microsoft/MIDI; probar con el dispositivo
+     desconectado / otro puerto; actualizar el driver del fabricante.
+     Fabricantes nuevos: Roland, Korg, Akai, Novation, M-Audio,
+     iConnectivity, Microsoft (Windows MIDI Services).
+   - Corrupción de heap (0xC0000374) y fast-fail 3/10/11: hallazgo que
+     explica que el módulo que la notó no es necesariamente el culpable,
+     acción con gflags /p /enable <exe> /full (page heap) y penalización
+     -15 en el puntaje. Fast-fail 2 (cookie /GS): la función que desbordó se
+     ubica de forma confiable (+10).
+   - Patrones conocidos (solo hechos públicos), reportados cuando el módulo
+     está en el stack analizado: PACE/iLok (wrappersist, paceeden, tpkd),
+     WebView2, Thesycon USB audio (tusbaudio), ASIO4ALL, runtimes C
+     antiguos (msvcr70..120), GDI/GDI+, compilador de shaders D3D.
+   - "Copy prompt for an AI second opinion" (pestaña Support summary):
+     texto en inglés con instrucciones para un asistente de IA, el resumen,
+     el puntaje con evidencia, los hallazgos, la excepción, los primeros 16
+     frames de TODOS los hilos y los módulos de terceros. Anonimizado como
+     cualquier exportación; botón de copiar y de descargar (.txt). La
+     página sigue sin conectarse a nada.
+   - Diagramas en Diagnosis: "Stack map" (una barra por frame del hilo
+     analizado, coloreada: culpable / terceros / aplicación / sistema) y
+     "Thread map" (una caja por hilo relevante; ⚠ el que falló, ★ el
+     principal, ● tiene al culpable; línea punteada = posible deadlock).
+     SVG inline, sin dependencias, respeta el tema oscuro.
 
 7. Notas propias ("Import notes" / "Export notes"):
    - En la pestaña Diagnosis, la tarjeta "My notes" permite escribir una
@@ -295,6 +450,16 @@ Cambios entre dumps:
   prueba.
 - La vigilancia de carpetas requiere la File System Access API. Firefox
   no la tiene.
+- Arrastrar una carpeta puede fallar en Chrome/Edge/Brave según la ruta
+  (webkitGetAsEntry devuelve EncodingError). Archivos sueltos sí; para la
+  carpeta, "Open folder".
+- macOS (beta): sin validación con informes reales. En los .hang solo se
+  lee el proceso objetivo y la rama más cargada de cada hilo (no todo el
+  árbol). Los nombres de función dependen de que el
+  informe venga simbolizado (lo normal en los frameworks de Apple; en los
+  plugins suele aparecer solo módulo+offset). Las reglas de fabricante se
+  prueban sobre la ruta con "/" convertida en "\", por lo que la detección
+  de fabricante en Mac es más pobre que en Windows.
 
 
 7. PRIVACIDAD Y RED
@@ -311,7 +476,33 @@ Cambios entre dumps:
 
 8. HISTORIAL
 ------------
-1.4.1  2026-10-21  Corrección del favicon (data URI con comillas sin codificar).
+1.6.0  2026-10-22  Puntaje de confianza 0-100 con evidencia y aviso "pista, no
+       veredicto"; regla de evidencia cruzada de hilos; tipo de módulo MIDI
+       (Windows MIDI Services, CoreMIDI, drivers) con acciones; razonamiento
+       de corrupción de heap / fast-fail (page heap, cookie /GS); tabla de
+       patrones conocidos; prompt para segunda opinión de una IA; diagramas
+       SVG de stack y de hilos. Motivado por el hilo del foro de Steinberg
+       (Psychlist1972 / Microsoft). Sin cambios en parsers; mismos 7
+       culpables.
+1.5.0  2026-10-22  macOS (BETA): lectura de informes .ips (macOS 12+) y
+       .crash (macOS 10.x/11) en el mismo HTML, con el mismo diagnóstico,
+       firma, comparación, Fix first, notas y exportaciones; tipo de módulo
+       Audio Unit; excepciones EXC_*; excepciones C++/ObjC no capturadas
+       desde ASI; firma de código inválida; aviso Rosetta 2; anonimizado de
+       /Users/<nombre>/ e identificadores del informe; 2 informes demo de
+       macOS; rutas de macOS en "Where are the dumps?"; pestaña "Raw report".
+       Informes de congelamiento .hang / .spin (spindump) con duración,
+       muestras por hilo y detección de deadlock. Pestaña Threads con cola y
+       muestras en Mac. Opción "Hide memory figures in exports". Corrección
+       del selector de módulo de "My notes" en tema oscuro (color-scheme +
+       estilos de <select>). 67 claves nuevas EN/ES/DE (441 por idioma).
+       Comentarios del bloque UI ampliados; secciones del CORE renumeradas
+       (1 a 13). Prueba de dump x86 sintético en core_test.js. Guías
+       completas en inglés y alemán (docs/README-en.txt, README-de.txt).
+1.4.1  2026-10-21  Corrección: el favicon no aparecía. La dirección de datos
+       (data URI) del ícono tenía comillas y '#' sin codificar: la comilla
+       cerraba el atributo href a los 32 caracteres. Ahora el SVG va
+       completamente codificado. Sin otros cambios.
 1.4.0  2026-10-21  Firma de crash; tipo de excepción C++; ranking "Fix first";
        informe HTML autocontenido y Print / PDF; dumps de demostración
        sintéticos; interfaz en alemán. El decodificador de instrucciones ya

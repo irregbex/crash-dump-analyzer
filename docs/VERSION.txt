@@ -1,23 +1,46 @@
 Crash Dump Analyzer
-Versión:        1.4.1
-Fecha:          2026-10-21 (hora de Chile)
+Versión:        1.6.0 (incluye la 1.5.0 macOS beta, nunca publicada por separado)
+Fecha:          2026-10-22 (hora de Chile)
 Archivo:        CrashDumpAnalyzer.html (un solo archivo, sin dependencias)
-String interno: CDV.VERSION = '1.4.1'
+String interno: CDV.VERSION = '1.6.0'
 
-Cambios respecto de 1.4.0:
-- Favicon corregido.
-    Causa: <link rel="icon" href="data:image/svg+xml,..."> se armaba con
-    urllib.parse.quote(svg, safe=' :/=",.#-'), que dejaba las comillas
-    dobles y '#' sin codificar. La primera comilla del SVG cerraba el
-    atributo href (que quedaba de 32 caracteres) y '#' habría iniciado un
-    fragmento.
-    Corrección: quote(svg, safe=''), todo codificado (2113 caracteres).
-- Sin cambios en el análisis ni en la interfaz.
+Cambios respecto de 1.5.0 (todos motivados por el hilo del foro de Steinberg,
+en especial Psychlist1972 / Microsoft):
+- computeScore (CORE 9d): puntaje 0-100 con lista de evidencias
+  {key, pts, vars}; a.score en analyze y analyzeMac; hallazgo f.lead si <= 50.
+  UI: pastilla "Score" en el veredicto y tarjeta "Why this confidence";
+  TXT, HTML, JSON y resumen para soporte incluyen el puntaje.
+- Regla cross-thread (analyze, Windows): overviewThreads guarda rows.mods;
+  con razón stack / fault-system / none y un único plugin de nivel 1 en 2+
+  hilos, el culpable pasa a ese plugin (reason 'cross-thread', medium,
+  v.crash.cross, f.crossThread).
+- MIDI: MIDI_WIN_RE / MIDI_VENDOR_RE, kind 'midi' (tier 2) en Windows y Mac,
+  actividad 'midi' (Windows y CoreMIDI), acciones a.midiWin / a.midiDevice /
+  a.midiDriver, fix.midi, fabricantes MIDI en VENDOR_RULES.
+- Heap / fast-fail: a.heapCorruption (0xC0000374, fast-fail 3/10/11) con
+  f.heap, a.heap y ev.heap -15; a.gsFailure (fast-fail 2) con f.gs y ev.gs +10.
+- KNOWN_PATTERNS (pace, webview, thesycon, asio4all, oldcrt, gdi,
+  d3dcompiler): a.patterns + hallazgos kp.*; acciones a.protection /
+  a.webview cuando aplican.
+- buildAIPrompt (CORE): prompt en inglés para segunda opinión de IA; UI
+  copyAI / downloadAI en la pestaña Support summary.
+- Diagramas (UI): stackMapSVG y threadMapSVG en Diagnosis; CSS svg.diagram.
+- I18N: 494 claves por idioma (52 nuevas), paridad EN/ES/DE verificada.
+- Sin cambios en parsers (minidump, PE, .ips, .crash, .hang) ni en el
+  decodificador. Los 7 dumps reales dan los mismos culpables y firmas que
+  1.4.1 / 1.5.0.
 
-Pruebas realizadas:
-- Favicon cargado como imagen en Chromium: 1.4.0 da 0x0 (roto) y 1.4.1
-  da 150x150.
-- tests/core_test.js con los 7 dumps reales y los demo: ALL OK.
-- index.html del repositorio (ahora con el mismo favicon y CSP img-src
-  data:) redirige a CrashDumpAnalyzer.html. La demo carga con 0 errores de
-  JavaScript y 0 peticiones de red.
+Pruebas realizadas (2026-10-22):
+1) node tests\core_test.js CrashDumpAnalyzer.html @Source: ALL OK (42
+   verificaciones; 10 nuevas: puntaje, cross-thread, MIDI, heap, /GS, patrón
+   PACE, prompt IA Windows y Mac). Mismos 7 culpables; puntajes mediaclient
+   75, Turnado 70, HALion 70, Massive X 90, Serum2 90, WasapiDriver64 60,
+   Stylus RMX 80.
+2) pe_unwind_test.js: NO se corrió (sin cambios en unwind ni PE).
+3) Chromium headless (Playwright, claro y oscuro): mismas verificaciones que
+   1.5.0 (7 demos, idiomas, exportaciones con hideMem, favicon, selector de
+   notas, archivo inválido, 0 errores JS, 0 red) con el HTML 1.6.0.
+4) Pruebas manuales de Felipe sobre la 1.5.0 (todas OK) siguen vigentes: la
+   1.6.0 no toca carga de archivos, Watch folder, impresión ni tema.
+NO probado: informes .ips/.crash/.hang reales de Cubase; dumps MIDI reales
+(solo sintéticos); dumps con corrupción de heap reales; Firefox con la 1.6.0.

@@ -1,4 +1,4 @@
-CRASH DUMP ANALYZER 1.4.0 - ARQUITECTURA
+CRASH DUMP ANALYZER 1.6.0 - ARQUITECTURA
 ========================================
 
 0. INVENTARIO DE MÓDULOS (bloque CORE, en orden dentro del archivo)
@@ -479,6 +479,8 @@ analyzeInstruction:
 
 14. ÍCONO Y RUTAS TÍPICAS (1.2.1)
 --------------------------------
+- Favicon: data URI con el SVG codificado por completo (quote con safe=''). Desde 1.4.1;
+  antes las comillas sin codificar cortaban el atributo href.
 - Ícono SVG, viewBox 64x64:
     fondo: rect redondeado (rx 14) con gradiente #2b4a8a -> #121a33;
     forma de onda: trazo de 3.6 con gradiente #7ad0ff -> #9f8cff;
@@ -590,3 +592,270 @@ Devuelve { html, body, css }.
     4      0xE06D7363 lanzado por Example Reverb con RTTI std::bad_alloc /
            std::exception en base+0x50000; RAM libre 0,6 de 16 GB.
 - VENDOR_RULES incluye 'Example Audio (demo)'.
+
+
+21. INFORMES DE macOS (1.5.0, BETA): parseIPS / parseCrashText / buildMacDump
+-----------------------------------------------------------------------------
+- Objetivo: producir el MISMO objeto d que parseMinidump, con d.platform =
+  'mac' y d.mac {format, procName, procPath, appVersion, bundleId, model,
+  translated, bugType, incident, procRole, termination, asi, vmRegionInfo,
+  ids, raw}. Campos que no existen en Mac quedan vacíos: streams [],
+  memory [], unloaded [], vm/sysmem null, header.flags 0n, reader null.
+- parseDump(input, fileName): input ArrayBuffer o string. Si los 4 primeros
+  bytes son 'MDMP' -> parseMinidump. Si el texto (primeros 4096 bytes,
+  UTF-8, BOM opcional) empieza con '{' -> parseIPS. Si empieza con
+  'Process:' o 'Incident Identifier:' o contiene '\nException Type:' ->
+  parseCrashText. Si empieza con 'Date/Time:' y contiene 'Steps:' o
+  'Command:' -> parseSpindump. Si no, Error con code 'NOT_DUMP'.
+- .ips: línea 1 = JSON de cabecera; resto = JSON del cuerpo. Si bug_type es
+  288 o el cuerpo empieza con 'Date/Time:', el cuerpo es un spindump ->
+  parseSpindump(cuerpo, nombre, cabecera). Si no, se exige Array threads y
+  Array usedImages; si faltan se lanza Error con code 'MAC_UNSUPPORTED' y
+  e.bugType (la UI muestra ui.macUnsupported traducido).
+- .hang / .spin (parseSpindump): cabecera = texto antes del primer
+  "Process:" (Command, Path, Version, Architecture, OS Version, Event,
+  Duration, Steps, Hardware model). Sección objetivo = desde el primer
+  "Process:" hasta el siguiente. "Thread 0x<hex> ... <N> samples": id =
+  parseInt(hex,16), queue de DispatchQueue "...", name de Thread name
+  "...", samples. Líneas de frame
+  "^(\s*)\*?(\d+)\s+(.+?) \((.+?) \+ (\d+)\) \[0x([0-9a-f]+)\]": se
+  sigue la rama más cargada = primera línea con indentación mayor que la
+  última seleccionada; la primera línea con indentación <= corta. Al final
+  se invierten (hoja primero). "Binary Images:" al final del archivo:
+  "0x<ini> - 0x<fin>  <nombre> <versión> <uuid> /ruta" (uuid = cualquier
+  texto entre < >; en los demos no es hexadecimal). d.mac.hang = {event,
+  duration, steps}; d.mac.format = 'hang'. Sin excepción -> analyzeMac
+  rama hang con hallazgo f.mac.hang (l.duration en informe y pestaña
+  System). Solo se lee el proceso objetivo; el '*' de frames de kernel se
+  ignora.
+    imágenes: {base, size, path, name, uuid, arch, CFBundleShortVersionString}
+    frames:   addr = usedImages[imageIndex].base + imageOffset (BigInt)
+    threadState ARM: x[0..28].value, fp, lr, sp, pc, cpsr, far, esr
+                x86: rax..r15, rip, rflags, cr2 (cada uno {value})
+    esr.description con "write" -> operación de escritura (op 1).
+    asi: {biblioteca: [líneas]} -> texto con saltos de línea.
+    ids: incident_id, incident, crashReporterKey, sleepWakeUUID, slice_uuid.
+    tiempos: captureTime / procLaunch "YYYY-MM-DD HH:MM:SS.ffff +ZZZZ"
+    (macTime aplica la zona).
+- .crash: parser por líneas. Campos "Nombre: valor"; bloques "Thread N
+  Crashed::" / "Thread N:: nombre" / "Thread N:" con líneas
+  "<n>  <imagen>  0x<addr> <símbolo> + <off>" (si el resto empieza con 0x no
+  hay símbolo); "Thread N crashed with ... Thread State" con pares
+  "reg: 0x..."; "Binary Images:" con "0x<ini> - 0x<fin> +<id> (<ver>) <UUID>
+  /ruta". Las imágenes se nombran por el archivo de la ruta (no por el
+  bundle id) para coincidir con .ips. El módulo de cada frame se resuelve
+  por dirección (findModule), igual que en Windows.
+- buildMacDump:
+    m.name = macModuleName(path): nombre del bundle si la ruta contiene
+    X.vst3/, X.vst/, X.component/, X.clap/, X.aaxplugin/, X.driver/,
+    X.bundle/ o X.plugin/; si no, el nombre dyld. m.imageName guarda el
+    nombre dyld. m.pdbId = UUID. m.timestamp = 0 (sin fecha de enlace:
+    el aviso "binario antiguo" no aplica en Mac). m.arch.
+    d.exeModule = imagen con path === procPath (o que termina en
+    /procName).
+    th.macFrames = [{where ip|stack, method 'symbol', addr, sym, module,
+    call true}]; sym = "modulo+0xOFF  (símbolo+loc)". th.ctx desde los
+    registros si existen; si no, ctx mínimo con ip = frame 0.
+    d.exception = {threadId, code: type (string), address: ip del frame 0,
+    params [], type, signal, codes, subtype, target (BigInt|null), op}.
+    target: "at 0x..." del subtype o rawCodes[1] en EXC_BAD_ACCESS.
+- classifyModuleMac (orden): host (path === exe) > gpu (MAC_GPU_RE sobre
+  el nombre) > plugin-vst3 (.vst3/) > plugin-au (.component/) > plugin-clap
+  > plugin-aax > plugin-vst2 (.vst/) > audio-driver (/Library/Audio/
+  Plug-Ins/HAL/ o .driver/) > protection (pace, ilok, interlok) > ara
+  (melodyne, /ara/) > webview (CEF, Electron) > runtime (MAC_RUNTIME_RE:
+  libc++, libobjc, libswift, libdispatch, libsystem_) > system
+  (MAC_SYSTEM_RE: /System/, /usr/lib/, /usr/libexec/, /private/preboot/,
+  /Library/Apple/, /Library/Frameworks/, /Library/PrivateFrameworks/) >
+  host-component (dentro del .app del exe) > vendor-component (mismo
+  fabricante que el exe según VENDOR_RULES) > thirdparty.
+  vendorOf recibe la ruta con '/' -> '\\' para reutilizar VENDOR_RULES;
+  regla nueva 'Apple (macOS)' anclada a \\system\\ / \\usr\\ /
+  \\library\\(frameworks|privateframeworks|apple)\\.
+- scanStack devuelve thread.macFrames (sin escaneo). overviewThreads: en
+  Mac el "módulo de la IP" es el del frame 0 y el estado wait se decide con
+  MAC_WAIT_RE (libsystem_kernel.dylib, libsystem_pthread.dylib).
+
+22. analyzeMac (sección 9b del CORE)
+------------------------------------
+Mismo objeto a que analyze(), más a.platform = 'mac' y a.codesign.
+- a.exc = {code null, codeHex: type, name: signal, descKey 'mexc.<TYPE>'
+  (MAC_EXC_KNOWN) o 'mexc.unknown', type, signal, codes, subtype}. La
+  firma usa codeHex, por lo que en Mac es "crash|EXC_BAD_ACCESS|...".
+- EXC_BAD_ACCESS con target: categoría null (< 0x10000) / garbage
+  (> 0x00007FFFFFFFFFFF) / module (dentro de una imagen con tamaño) /
+  unmapped; hallazgo f.av.<cat> reutilizado (op 0 read / 1 write).
+- ASI: "abort() called" -> f.mac.abort; "terminating (with|due to)
+  uncaught exception of type T: what" -> a.cxxType {type T} + f.mac.cxx
+  (+ f.cxxType con pista si T es estándar); "Terminating app due to
+  uncaught exception 'N', reason: 'R'" -> f.mac.objc; otro texto ->
+  f.mac.asi (300 caracteres).
+- termination.namespace: CODESIGNING -> a.codesign, f.mac.codesign y el
+  módulo cuya ruta (o nombre) aparece en indicator/ASI pasa a culpable
+  (fault, alta); DYLD -> f.mac.dyld; otro distinto de SIGNAL ->
+  f.mac.termination.
+- Culpable: codesign > frame 0 no-sistema (fault, alta) > primer frame
+  no-sistema (cxx-mac si hubo excepción C++/ObjC, si no stack-mac; alta /
+  media) > frame 0 del sistema (fault-system-mac, baja). Veredictos
+  v.crash.module / v.crash.cxx / v.crash.stack-mac / v.crash.system-mac.
+- Sin excepción: hang si d.mac.hang existe o el nombre del archivo contiene
+  hang, spin o freeze; si no, snapshot. Misma lógica de hilo principal que
+  Windows (tiers 1/2 en los 80 frames superiores, posible deadlock). El
+  hilo principal es el de queue com.apple.main-thread o el primero.
+- Actividad: inferActivityMac con MAC_ACTIVITY_RULES (nombres de
+  frameworks: AppKit/CoreGraphics/QuartzCore -> ui; CFNetwork/Security ->
+  net; CoreAudio/AudioToolbox/CoreMIDI -> audio; AVFoundation/CoreMedia ->
+  media) y kinds gpu, protection, audio-driver, webview, ara.
+- Hallazgos fijos: f.mac.frames (si hay frames), f.mac.noMem, f.mac.rosetta
+  si translated. Acciones: actionsFor() con reemplazos a.system ->
+  a.mac.system, a.driver -> a.mac.driver, a.driverPanel eliminada,
+  a.windbg -> a.mac.console, a.gpu -> a.mac.system, a.report(Dev) ->
+  a.mac.report(Dev); más a.mac.codesign (al inicio), a.mac.au si el
+  culpable es plugin-au, a.mac.rosetta, a.dual, y a.mac.console siempre al
+  final. Deduplicadas por clave.
+
+23. OPCIÓN hideMem, ANONIMIZADO macOS, DEMOS macOS, TEMA OSCURO
+---------------------------------------------------------------
+- opts = {hideMem:true} (UI: exportOpts() desde chkHideMem) en
+  buildTextReport(d,a,lang,notes,opts), buildSupportText(d,a,opts),
+  buildCSV(items,opts), buildJSON(items,opts) y
+  buildReportHTML(items,lang,notes,tokens,opts). visibleFindings(a,opts)
+  filtra las claves f.mem*. Con hideMem: sin sección Memoria (TXT/HTML),
+  sin fila Memory (soporte), columnas process_private_mb /
+  ram_available_pct / commit_pct vacías (CSV), memory: null (JSON). El
+  JSON agrega platform y findings (textos en inglés, ya filtrados).
+- privacyTokens: dirs de macOS que no están bajo MAC_STD_DIR_RE
+  (/system, /usr, /library, /applications, /private, /opt, /cores, /dev,
+  /bin, /sbin, /etc, /var) ni bajo /users/ (esas las cubre anonymize()
+  con "/Users/<user>"); ids = d.mac.ids. anonymizeAll reemplaza dirs por
+  "<folder>/" si empiezan con "/" (si no, "<folder>\\") y cada id por "<id>".
+- makeIPS(spec) genera un .ips sintético con la cabecera y el cuerpo que
+  lee parseIPS (frames por [key, offset, símbolo, loc] e imágenes por
+  clave). El demo 7 (.hang) se arma como texto spindump con la función
+  local line(depth, n, sym, key, off). utf8Buffer convierte el texto a
+  ArrayBuffer sin TextEncoder (no existe en el contexto vm de Node de
+  core_test.js). demoDumps() devuelve los 4 minidumps más
+  demoMacReports() (2 .ips + 1 .hang); la UI los envuelve en File igual
+  que un archivo del disco. La base de dyld (0x1F0000000) queda fuera del
+  rango de DemoDAW para que los frames de start resuelvan a dyld.
+- makeDump(spec) con spec.arch === 'x86' (solo tests): SystemInfo archId 0,
+  CONTEXT x86 de 0x2CC bytes con ContextFlags 0x10007 y CTX_OFF_X86
+  (edi 0x9C, esi 0xA0, ebx 0xA4, edx 0xA8, ecx 0xAC, eax 0xB0, ebp 0xB4,
+  eip 0xB8, esp 0xC4), slots de stack de 4 bytes, ThreadContext.DataSize y
+  el contexto de la excepción de 0x2CC. Verifica el camino x86 de
+  parseContext/scanRange sin dumps reales.
+- Tema oscuro: :root{color-scheme:light} y, bajo prefers-color-scheme:
+  dark, color-scheme:dark; select{background:var(--panel2);color:
+  var(--text);border...} y select option{background:var(--panel)}. Antes el
+  <select> de "My notes" conservaba el fondo blanco del navegador con el
+  texto claro del tema.
+- compare(): nota c.mixed cuando hay dumps de Windows y de macOS juntos
+  (nombres y firmas no comparables). Fix first y frecuencia siguen
+  funcionando por nombre de módulo.
+- Arrastre (UI, 1.5.0): entriesFromDrop toma los FileSystemEntry de forma
+  síncrona dentro del evento drop; walkEntries recorre archivos y carpetas
+  (readEntries por lotes) y cuenta los fallos en out.failed. Chrome/Brave
+  lanzan EncodingError ("A URI supplied to the API was malformed") desde
+  entry.file() y readEntries() con algunas rutas (observado con la carpeta
+  "@Source"; el navegador no consigue construir su URL filesystem: interna).
+  El handler de drop usa entonces dataTransfer.files (solo archivos; una
+  carpeta aparece como File de 0 bytes y se descarta) y, si no queda nada,
+  muestra ui.dropFail en la barra lateral. "Open folder" (webkitdirectory)
+  no pasa por esa API y funciona con la misma carpeta.
+
+
+24. PUNTAJE DE CONFIANZA (computeScore, sección 9d, 1.6.0)
+----------------------------------------------------------
+- Entrada: d y a ya analizados (culpable, frames, threadsOv, instr, av, mem,
+  warnings, cxxType, deadlock, heapCorruption, gsFailure). Salida:
+  a.score = { value 5..95, evidence [{key, pts, vars}] }.
+- Base por regla: fault / cxx / cxx-mac / unloaded 60; stack / stack-mac
+  40; cross-thread 45; hang-stack 45 (tier 1) o 30 (tier 2); hang-host 20;
+  fault-system / fault-system-mac 20; none 0 (sin módulo -> value 0 y
+  ev.none).
+- Evidencias: ev.otherThreads +15 (rows.hasCulprit en otros hilos),
+  ev.badReg +15 (registro null/garbage en la instrucción decodificada) o
+  si no ev.badPtr +10 (a.av null/garbage/gp), ev.deadlock +10, ev.cxxType
+  +8, ev.old / ev.legacy / ev.dual +5 (primer aviso que afecte al culpable),
+  ev.near +5 (reglas stack / stack-mac / hang-stack y culpable en los 3
+  primeros frames), ev.mem -10, ev.heap -15, ev.gs +10, ev.sysOnly -10,
+  ev.fewFrames -5.
+- La etiqueta alta / media / baja NO cambia (sigue saliendo de la regla):
+  el puntaje la refina y explica. f.lead se agrega con value <= 50.
+- Exportado: TXT (líneas "+NN texto" bajo el culpable), HTML (fila Score con
+  lista), JSON (score {value, evidence[{points, text}]}), soporte (fila
+  Score), prompt IA (sección TOOL CONFIDENCE SCORE). CSV no cambia (20
+  columnas, compatibilidad).
+
+25. REGLA CROSS-THREAD, MIDI, HEAP / FAST-FAIL, PATRONES (1.6.0)
+----------------------------------------------------------------
+- overviewThreads guarda en cada fila rows.mods = Set de nombres de
+  módulos no-sistema en los primeros 32 frames del hilo.
+- Cross-thread (solo analyze de Windows, kind crash, razón stack /
+  fault-system / none): se cuentan, en los hilos distintos del que falló,
+  los módulos de nivel 1 (tierOf === 1) presentes; si exactamente UNO
+  aparece en >= 2 hilos y no es ya el culpable, pasa a culpable con reason
+  'cross-thread', confianza media, veredicto v.crash.cross {fault, module,
+  n}, hallazgo f.crossThread y se recalcula rows.hasCulprit. a.previousCulprit
+  conserva la elección anterior (no se muestra; sirve para depurar).
+- MIDI: MIDI_WIN_RE (Windows.Devices.Midi2.dll, Midi2.*.dll,
+  Microsoft.Windows.Devices.Midi2.dll, Windows.Devices.Midi.dll,
+  midimap.dll, wdmaud.drv, midisrv.exe) se evalúa ANTES de la regla
+  "\windows\ -> system", así estos módulos no son "systemish" y pueden ser
+  culpables (tier 2). MIDI_VENDOR_RE (/midi|usbmidi|ksmidi|mididrv/) se
+  evalúa al final, después de host-component / vendor-component, para no
+  reclasificar componentes de la propia aplicación. Mac: /Library/Audio/
+  MIDI Drivers/ o *midi*.plugin/ -> 'midi'. ACTIVITY 'midi' antes de 'audio'
+  (wdmaud.drv sale de la regla audio). actionsFor('midi'): Windows MIDI
+  Services -> a.midiWin + a.midiDevice; driver de fabricante -> a.midiDriver
+  + a.midiDevice + reporte. En analyzeMac a.midiWin se cambia por
+  a.midiDevice.
+- Heap / fast-fail (analyze, rama crash, después del decodificador):
+  0xC0000374 -> a.heapCorruption, f.heap {module culpable}; 0xC0000409 con
+  ExceptionInformation[0] = 2 -> a.gsFailure, f.gs; = 3 / 10 / 11 ->
+  a.heapCorruption. Acción a.heap {host} (gflags /p /enable <exe> /full).
+  Score: ev.heap -15, ev.gs +10.
+- KNOWN_PATTERNS [{key, re}] se prueban contra los nombres (minúsculas) de
+  los módulos de los primeros 40 frames del hilo analizado más el culpable;
+  cada key una vez -> a.patterns[] y hallazgo kp.<key> {module}. pace y
+  webview agregan a.protection / a.webview a las acciones. Solo hechos
+  públicos; ampliar con lo que aporte el foro.
+
+26. PROMPT PARA SEGUNDA OPINIÓN DE IA (buildAIPrompt, 1.6.0)
+-----------------------------------------------------------
+- Siempre en inglés. Encabezado con el rol, la advertencia de que el
+  análisis es heurístico y 4 instrucciones (confirmar o refutar con TODOS
+  los hilos, mecanismo, qué evidencia faltaría, no inventar nombres de
+  función), formato de respuesta Verdict / Confidence / Mechanism / What
+  to do next.
+- Secciones: AUTOMATED SUMMARY (buildSupportText), TOOL CONFIDENCE SCORE,
+  FINDINGS (visibleFindings, respeta hideMem), EXCEPTION (código, dirección,
+  ExceptionInformation[], registros; en Mac tipo/señal/códigos/subtipo,
+  ASI, termination), THREADS (cada hilo: id, nombre, cola, [CRASHED] /
+  [MAIN], estado, muestras, 16 frames hoja-primero; el hilo analizado usa
+  a.frames, los demás scanStack(…, 16)), THIRD-PARTY MODULES (ruta
+  incluida: la UI la anonimiza con finalText) y UNLOADED MODULES.
+- UI: tarjeta en Support summary con textarea (#aiTxt), copyAI (clipboard o
+  execCommand) y downloadAI (<archivo>.ai-prompt.txt, con BOM y anonimizado
+  por download()).
+
+27. DIAGRAMAS SVG (threadMapSVG, stackMapSVG, 1.6.0)
+----------------------------------------------------
+- stackMapSVG: hasta 24 frames de a.frames; una barra por frame con sangría
+  creciente (máx. 10 niveles) y clase por dueño del código: culprit
+  (módulo === culpable), sys (isSystemish o sin módulo), host (host /
+  host-component), third (resto). Leyenda con pastillas. viewBox 760 x
+  (16 por frame + 8).
+- threadMapSVG: hilos relevantes = el que falló, el principal, los que
+  tienen al culpable (rows.hasCulprit) y los que ejecutan terceros
+  (state 'third'); si son más de 12 se reduce a clave + culpable. Cajas de
+  210 x 58 en hasta 4 columnas; clase fault (borde rojo) / main (borde
+  acento); texto: id + nombre, estado (st.*), primer módulo no-sistema con
+  ● si tiene al culpable. Con a.deadlock se dibujan líneas punteadas desde
+  la caja del hilo principal a cada hilo en wait con el culpable. La
+  leyenda va en la última línea. style="max-width:<W>px" evita que se
+  agrande con pocos hilos.
+- Ambos usan solo clases CSS con variables del tema (svg.diagram .box,
+  .link, .fr.*), por lo que siguen el tema oscuro. No se incluyen en el
+  informe HTML/PDF (que no tiene JS ni CSS del tema); el informe sigue con
+  tablas.

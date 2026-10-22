@@ -1,4 +1,4 @@
-CRASH DUMP ANALYZER 1.4.0 - CÓDIGO FUENTE
+CRASH DUMP ANALYZER 1.6.0 - CÓDIGO FUENTE
 =========================================
 En el repositorio de GitHub las pruebas se ejecutan desde la raíz:
   node tests/core_test.js CrashDumpAnalyzer.html [carpeta con .dmp opcional]
@@ -10,7 +10,54 @@ No hay compilación ni minificación.
 
 Archivos
 --------
-..\CrashDumpAnalyzer.html   (cambia en 1.4.0)
+..\CrashDumpAnalyzer.html   (cambia en 1.6.0; ver VERSION.txt)
+    Detalle de 1.6.0:
+    CORE nuevo: sección 9d computeScore; KNOWN_PATTERNS, MIDI_WIN_RE,
+    MIDI_VENDOR_RE (constantes); buildAIPrompt (junto a buildSupportText).
+    CORE modificado: classifyModule y classifyModuleMac (kind 'midi'),
+    tierOf (midi = 2), ACTIVITY_RULES / MAC_ACTIVITY_RULES (act 'midi'),
+    actionsFor (midi), fixFirst (fix.midi), VENDOR_RULES (MIDI), analyze
+    (heap / fast-fail, patrones, regla cross-thread, a.score, f.lead),
+    analyzeMac (a.score, f.lead, swap a.midiWin), overviewThreads
+    (rows.mods), computeScore enganchado al final de ambos analizadores,
+    buildTextReport / buildSupportText / buildJSON / buildReportHTML
+    (puntaje y evidencia).
+    UI nuevo: threadMapSVG, stackMapSVG, copyAI, downloadAI; renderDiag
+    (pastilla Score, tarjeta "Why this confidence", diagramas);
+    renderSupport (tarjeta de prompt IA); CSS svg.diagram.
+    Detalle de 1.5.0:
+    Detalle de 1.5.0 (macOS beta + hideMem + tema oscuro):
+    Sección nueva CORE 7b (antes de 8. HEURISTIC STACK SCAN): MAC_SYSTEM_RE,
+    MAC_RUNTIME_RE, MAC_GPU_RE, MAC_WAIT_RE, MAC_EXC_KNOWN,
+    MAC_ACTIVITY_RULES, macTime, macModuleName, macArch, classifyModuleMac,
+    buildMacDump, parseIPS, parseCrashText, parseSpindump (.hang/.spin),
+    parseDump.
+    Sección nueva CORE 9b (después de analyze): analyzeMac,
+    inferActivityMac. (Secciones renumeradas: 9c firma/C++/fix first,
+    12 informe HTML, 13 demos.)
+    Demo: utf8Buffer, makeIPS, demoMacReports (2 .ips + 1 .hang);
+    demoDumps() devuelve 7. makeDump acepta arch 'x86' (CTX_OFF_X86).
+    Funciones modificadas: analyze() (despacha a analyzeMac si
+    d.platform === 'mac'), scanStack() (devuelve thread.macFrames),
+    overviewThreads() (módulo del frame superior y MAC_WAIT_RE en Mac),
+    tierOf/actionsFor (plugin-au), moduleWarnings (norm quita .vst y
+    .component), VENDOR_RULES (regla Apple y 'example sampler'),
+    compare() (nota c.mixed), privacyTokens/anonymizeAll (dirs de macOS e
+    ids), buildTextReport/buildSupportText/buildCSV/buildJSON/
+    buildReportHTML (parámetro opts {hideMem} y ramas Mac),
+    visibleFindings e isMac (nuevas).
+    UI: exportOpts(), DUMP_RE con ips/crash, loadFiles usa parseDump y
+    omite attachPE en Mac, TABS_MAC, renderExcMac, renderRawMac,
+    renderSystem (rama Mac), renderThreads (rama Mac: nombre, cola,
+    muestras), DUMP_PATHS con 2 rutas de macOS, chkHideMem, etiqueta
+    "macOS" en la lista, aviso beta en el veredicto, mensaje
+    ui.macUnsupported (error MAC_UNSUPPORTED), walkEntries con conteo de
+    fallos y fallback a dataTransfer.files en el drop (ui.dropFail). Comentarios de cabecera en
+    todas las funciones del bloque UI.
+    CSS: color-scheme light/dark en :root y estilos de select/option
+    (corrige el selector de "My notes" en tema oscuro).
+    1.4.1: solo el <link rel="icon">, con el SVG completamente codificado.
+    Detalle de 1.4.0:
     Funciones nuevas (CORE): fnv1a, crashSignature, demangleTypeName,
     cxxExceptionType, CXX_HINTS, fixFirst, REPORT_CSS, buildReportHTML,
     DumpWriter, CTX_OFF, makeDump y demoDumps; I18N.de.
@@ -58,10 +105,20 @@ Archivos
                    Support summary, tarjetas nuevas, línea de tiempo,
                    anonimizado y deduplicación.
 ARQUITECTURA.txt              (cambia) Estructuras, algoritmos y reglas.
-tests\core_test.js            (reescrito en 1.4.0: 17 verificaciones
-                              con resultado OK/FAIL y código de salida;
-                              incluye los dumps demo, el informe HTML y la
-                              paridad ES/DE.)
+tests\core_test.js            (1.6.0: 42 verificaciones; agrega puntaje,
+                              cross-thread, MIDI, heap, /GS, patrón PACE y
+                              prompt IA con dumps sintéticos de makeDump.)
+                              (1.5.0: 36 verificaciones; agrega demos
+                              macOS 5, 6 y 7 (.hang), un .crash de prueba
+                              embebido, parseDump con contenido inválido,
+                              .ips de tipo desconocido y .hang truncado,
+                              anonimizado de macOS, opción hideMem en
+                              todas las exportaciones, nota de plataformas
+                              mezcladas y un minidump x86 sintético. Usa
+                              parseDump en vez de parseMinidump.)
+                              1.4.0: 17 verificaciones con resultado
+                              OK/FAIL y código de salida; dumps demo,
+                              informe HTML y paridad ES/DE.
                               Antes: (cambia en 1.2.0) Prueba del CORE con dumps
                               reales: instrucción, notas, CSV/JSON y
                               anonimizado sintético.
@@ -88,5 +145,12 @@ Pruebas
      sintético con el tamaño de frame calculado por pefile.
    - Verifica que unwindX64 recupere la dirección de retorno y el RSP
      exactos.
+
+3) Chromium headless (opcional, no incluido en tests\): en 1.5.0 se usó un
+   script Playwright que carga la demo, recorre pestañas e idiomas, descarga
+   las exportaciones con "Hide memory" activo, mide el contraste del
+   selector de notas en tema oscuro y verifica 0 errores JS y 0 peticiones
+   de red. La página no permite 'unsafe-eval' (CSP), así que
+   page.waitForFunction no sirve: usar bucles con $$eval.
 
 Requisitos: Node 16 o superior; Python 3 con pefile (solo para la prueba 2).
