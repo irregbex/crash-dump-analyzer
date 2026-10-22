@@ -2,7 +2,7 @@
 
 <h1 align="center">Crash Dump Analyzer</h1>
 
-<p align="center"Offline crash-dump analyzer for Cubase and other DAWs: Windows .dmp and macOS .ips/.hang (beta). One HTML file, nothing uploaded.<br>
+<p align="center">Find out which plugin or driver crashed your DAW — from the Windows <code>.dmp</code> files it leaves behind, and (beta) from macOS <code>.ips</code> / <code>.crash</code> / <code>.hang</code> reports.<br>
 One HTML file · runs 100% offline in your browser · nothing is uploaded.</p>
 
 <p align="center">
