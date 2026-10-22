@@ -6,7 +6,7 @@
 One HTML file · runs 100% offline in your browser · nothing is uploaded.</p>
 
 <p align="center">
-<a href="https://YOUR-GITHUB-USERNAME.github.io/crash-dump-analyzer/"><b>▶ Try it online</b></a> ·
+<a href="https://irregbex.github.io/crash-dump-analyzer/"><b>▶ Try it online</b></a> ·
 <a href="../../releases/latest"><b>⬇ Download</b></a>
 </p>
 
