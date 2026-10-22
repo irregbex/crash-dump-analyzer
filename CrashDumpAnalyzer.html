@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!--
   ============================================================================
-   Crash Dump Analyzer 1.4.0   (named "Crash Dump Viewer" up to 1.2.1)
+   Crash Dump Analyzer 1.4.1   (named "Crash Dump Viewer" up to 1.2.1)
    Offline, single-file viewer for Windows minidump (.dmp) files.
   ============================================================================
 
@@ -39,6 +39,7 @@
    names (std::bad_alloc ...), "fix first" ranking in the comparison, printable
    report (Print / PDF), self-contained anonymised HTML report export, built-in
    synthetic demo dumps (fictional software, no real data) and a German UI.
+   1.4.1: favicon fixed (the data URI was cut at the first unencoded quote).
 
    PRIVACY / OFFLINE GUARANTEE
    ---------------------------
@@ -91,8 +92,10 @@
 <meta http-equiv="Content-Security-Policy"
       content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; form-action 'none'; base-uri 'none'">
 <title>Crash Dump Analyzer</title>
-<!-- Icon: inline SVG as data URI (allowed by img-src data:). Same artwork as the header logo. -->
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"%3E %3Cdefs%3E %3ClinearGradient id="bg" x1="0" y1="0" x2="1" y2="1"%3E %3Cstop offset="0" stop-color="#2b4a8a"/%3E%3Cstop offset="1" stop-color="#121a33"/%3E %3C/linearGradient%3E %3ClinearGradient id="wave" x1="0" y1="0" x2="1" y2="0"%3E %3Cstop offset="0" stop-color="#7ad0ff"/%3E%3Cstop offset="1" stop-color="#9f8cff"/%3E %3C/linearGradient%3E %3C/defs%3E %3Crect x="2" y="2" width="60" height="60" rx="14" fill="url%28#bg%29"/%3E %3Crect x="2.5" y="2.5" width="59" height="59" rx="13.5" fill="none" stroke="#ffffff" stroke-opacity=".12"/%3E %3Cpath d="M8 32 L13 32 L16 22 L20 42 L24 16 L28 40 L31 30" fill="none" stroke="url%28#wave%29" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/%3E %3Cpath d="M31 30 L35 24 L33 33 L38 29" fill="none" stroke="#ff4d5e" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/%3E %3Cpath d="M38 29 L41 32" fill="none" stroke="#8a93a8" stroke-width="3" stroke-linecap="round"/%3E %3Ccircle cx="44" cy="42" r="9" fill="#0f172b" fill-opacity=".55" stroke="#e8edf7" stroke-width="3.4"/%3E %3Cpath d="M38.5 42 h3 l1.6 -3.4 l2 6.8 l1.4 -3.4 h2" fill="none" stroke="#ff4d5e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/%3E %3Cpath d="M50.6 48.6 L56 54" stroke="#e8edf7" stroke-width="4.4" stroke-linecap="round"/%3E %3C/svg%3E">
+<!-- Icon: inline SVG as data URI (allowed by img-src data:). Same artwork as the header logo.
+     The SVG is fully percent-encoded: an unencoded " would close the href attribute and an
+     unencoded # would start a URL fragment (both broke the favicon up to 1.4.0). -->
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2064%2064%22%3E%20%3Cdefs%3E%20%3ClinearGradient%20id%3D%22bg%22%20x1%3D%220%22%20y1%3D%220%22%20x2%3D%221%22%20y2%3D%221%22%3E%20%3Cstop%20offset%3D%220%22%20stop-color%3D%22%232b4a8a%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%23121a33%22%2F%3E%20%3C%2FlinearGradient%3E%20%3ClinearGradient%20id%3D%22wave%22%20x1%3D%220%22%20y1%3D%220%22%20x2%3D%221%22%20y2%3D%220%22%3E%20%3Cstop%20offset%3D%220%22%20stop-color%3D%22%237ad0ff%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%239f8cff%22%2F%3E%20%3C%2FlinearGradient%3E%20%3C%2Fdefs%3E%20%3Crect%20x%3D%222%22%20y%3D%222%22%20width%3D%2260%22%20height%3D%2260%22%20rx%3D%2214%22%20fill%3D%22url%28%23bg%29%22%2F%3E%20%3Crect%20x%3D%222.5%22%20y%3D%222.5%22%20width%3D%2259%22%20height%3D%2259%22%20rx%3D%2213.5%22%20fill%3D%22none%22%20stroke%3D%22%23ffffff%22%20stroke-opacity%3D%22.12%22%2F%3E%20%3Cpath%20d%3D%22M8%2032%20L13%2032%20L16%2022%20L20%2042%20L24%2016%20L28%2040%20L31%2030%22%20fill%3D%22none%22%20stroke%3D%22url%28%23wave%29%22%20stroke-width%3D%223.6%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%20%3Cpath%20d%3D%22M31%2030%20L35%2024%20L33%2033%20L38%2029%22%20fill%3D%22none%22%20stroke%3D%22%23ff4d5e%22%20stroke-width%3D%223.6%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%20%3Cpath%20d%3D%22M38%2029%20L41%2032%22%20fill%3D%22none%22%20stroke%3D%22%238a93a8%22%20stroke-width%3D%223%22%20stroke-linecap%3D%22round%22%2F%3E%20%3Ccircle%20cx%3D%2244%22%20cy%3D%2242%22%20r%3D%229%22%20fill%3D%22%230f172b%22%20fill-opacity%3D%22.55%22%20stroke%3D%22%23e8edf7%22%20stroke-width%3D%223.4%22%2F%3E%20%3Cpath%20d%3D%22M38.5%2042%20h3%20l1.6%20-3.4%20l2%206.8%20l1.4%20-3.4%20h2%22%20fill%3D%22none%22%20stroke%3D%22%23ff4d5e%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%20%3Cpath%20d%3D%22M50.6%2048.6%20L56%2054%22%20stroke%3D%22%23e8edf7%22%20stroke-width%3D%224.4%22%20stroke-linecap%3D%22round%22%2F%3E%20%3C%2Fsvg%3E">
 <style>
 /* ---------------------------------------------------------------------------
    THEME TOKENS. Light by default, dark when the OS prefers dark.
@@ -245,7 +248,7 @@ footer{color:var(--muted);font-size:12px;padding:16px;text-align:center}
 const CDV = (function () {
 'use strict';
 
-const VERSION = '1.4.0';
+const VERSION = '1.4.1';
 
 /* ----------------------------------------------------------------------------
  * 1. CONSTANTS

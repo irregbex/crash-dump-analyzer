@@ -1,4 +1,4 @@
-CRASH DUMP ANALYZER 1.4.0 - GUÍA EN ESPAÑOL
+CRASH DUMP ANALYZER 1.4.1 - GUÍA EN ESPAÑOL
 ==========================================
 (Hasta la 1.2.1 se llamaba "Crash Dump Viewer".)
 
@@ -311,6 +311,7 @@ Cambios entre dumps:
 
 8. HISTORIAL
 ------------
+1.4.1  2026-10-21  Corrección del favicon (data URI con comillas sin codificar).
 1.4.0  2026-10-21  Firma de crash; tipo de excepción C++; ranking "Fix first";
        informe HTML autocontenido y Print / PDF; dumps de demostración
        sintéticos; interfaz en alemán. El decodificador de instrucciones ya

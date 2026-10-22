@@ -1,55 +1,23 @@
 Crash Dump Analyzer
-Versión:        1.4.0
+Versión:        1.4.1
 Fecha:          2026-10-21 (hora de Chile)
 Archivo:        CrashDumpAnalyzer.html (un solo archivo, sin dependencias)
-String interno: CDV.VERSION = '1.4.0'
+String interno: CDV.VERSION = '1.4.1'
 
-Cambios respecto de 1.3.0:
-- crashSignature(): FNV-1a 32 bits sobre
-  "tipo|código|módulo|versión|módulo+offset", con id "CDA-XXXXXXXX". Nota
-  c.sameSig cuando la firma se repite.
-- cxxExceptionType(): ThrowInfo -> CatchableTypeArray -> CatchableType ->
-  TypeDescriptor (RVA en x64, punteros en x86); demangleTypeName();
-  explicaciones cxx.* para 12 tipos estándar.
-- fixFirst(): puntaje = 10 x caídas + 5 si es reciente (<= 90 días) + 2 si
-  la confianza es alta - 8 si está resuelto. Los resueltos van siempre al
-  final. Acciones fix.*.
-- buildReportHTML(): un solo generador para "Export report (.html)" y
-  "Print / PDF". CSS con alcance .rp; anonimizado antes del escape HTML.
-- Dumps de demostración: DumpWriter, makeDump() y demoDumps(). Se generan
-  en memoria y son válidos para la librería Python "minidump".
-- I18N.de con 374 claves (tratamiento "Sie"); botón DE.
-- analyzeInstruction() solo se ejecuta en fallos de hardware: AV/in-page
-  con análisis completo; C000001D, C0000094, C0000095, C0000096,
-  C000008C, C000008E y C0000090 solo con la instrucción.
+Cambios respecto de 1.4.0:
+- Favicon corregido.
+    Causa: <link rel="icon" href="data:image/svg+xml,..."> se armaba con
+    urllib.parse.quote(svg, safe=' :/=",.#-'), que dejaba las comillas
+    dobles y '#' sin codificar. La primera comilla del SVG cerraba el
+    atributo href (que quedaba de 32 caracteres) y '#' habría iniciado un
+    fragmento.
+    Corrección: quote(svg, safe=''), todo codificado (2113 caracteres).
+- Sin cambios en el análisis ni en la interfaz.
 
 Pruebas realizadas:
-- tests/core_test.js (nuevo, 17 verificaciones): ALL OK. Cubre:
-    - 7 dumps reales con 7 firmas distintas y ranking de 7 módulos;
-    - 4 demos sin advertencias del parser;
-    - firma repetida detectada;
-    - std::bad_alloc identificado;
-    - sin decodificador de instrucción en la excepción C++;
-    - deadlock detectado;
-    - módulo resuelto al final del ranking;
-    - notas en formato antiguo y nuevo;
-    - informe HTML sin <script>, con CSP y en alemán;
-    - CSV de 20 columnas y JSON con ranking;
-    - paridad de claves ES/DE con EN.
-- tests/pe_unwind_test.js: 108/108.
-- Validación independiente de los 4 dumps demo con la librería Python
-  "minidump": módulos, hilos, excepción, parámetros, memoria y versiones
-  correctos.
-- Chromium headless:
-    - botón Demo;
-    - interfaz en DE;
-    - exportación HTML sin scripts y con CSP;
-    - Print (window.print interceptado) con el informe en #printArea;
-    - vista de impresión verificada visualmente.
-  Resultado: 0 errores de JavaScript y 0 peticiones de red.
-
-Sin probar:
-- Tipo C++ en un dump real (ninguno de los 7 es una excepción C++).
-- Impresión real a PDF en Windows.
-- Lo pendiente de versiones anteriores (unwind con plugins reales, Watch
-  folder real, Firefox/Edge).
+- Favicon cargado como imagen en Chromium: 1.4.0 da 0x0 (roto) y 1.4.1
+  da 150x150.
+- tests/core_test.js con los 7 dumps reales y los demo: ALL OK.
+- index.html del repositorio (ahora con el mismo favicon y CSP img-src
+  data:) redirige a CrashDumpAnalyzer.html. La demo carga con 0 errores de
+  JavaScript y 0 peticiones de red.
