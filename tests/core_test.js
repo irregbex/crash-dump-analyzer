@@ -119,7 +119,7 @@ check('score: no f.lead when > 50; present when <= 50', !demo[0].a.findings.some
   x=an(mk({tid:1,code:0xC0000409,address:ip,params:[2n]},[{id:1,regs:{rip:ip},stackStart:0x10000000n,stack:[A('plug',0x1A3F0),A('host',0x10044)]}]),'gs.dmp');
   check('fast-fail /GS: f.gs finding and +ev.gs on the first non-system caller', x.a.gsFailure && x.a.findings.some(f=>f.key==='f.gs') && x.a.culprit.module.name==='Example Synth.vst3' && x.a.score.evidence.some(e=>e.key==='ev.gs'));
   const prompt=C.buildAIPrompt(demo[2].d, demo[2].a, {hideMem:true});
-  check('AI prompt: instructions, summary, score, all threads, modules; hideMem respected', /Verdict \/ Confidence/.test(prompt) && /=== TOOL CONFIDENCE SCORE ===/.test(prompt) && /=== THREADS \(3\)/.test(prompt) && /\[MAIN\]/.test(prompt) && /=== THIRD-PARTY MODULES/.test(prompt) && !/^Memory/m.test(prompt));
+  check('AI prompt: instructions, summary, score, all threads, modules; hideMem respected', /Verdict \/ Confidence/.test(prompt) && /=== TOOL CONFIDENCE SCORE ===/.test(prompt) && /=== THREADS \(3\)/.test(prompt) && /\[MAIN\]/.test(prompt) && /=== NON-SYSTEM MODULES/.test(prompt) && !/^Memory/m.test(prompt));
   check('AI prompt (mac): exception block with type/signal and ASI', /type: EXC_CRASH SIGABRT/.test(C.buildAIPrompt(m6.d,m6.a)) && /ASI: abort\(\) called/.test(C.buildAIPrompt(m6.d,m6.a)));
 }
 // notes compatibility
