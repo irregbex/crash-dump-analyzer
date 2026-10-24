@@ -7,7 +7,8 @@ One HTML file · runs 100% offline in your browser · nothing is uploaded.</p>
 
 <p align="center">
 <a href="https://irregbex.github.io/crash-dump-analyzer/"><b>▶ Try it online</b></a> ·
-<a href="../../releases/latest"><b>⬇ Download</b></a>
+<a href="../../releases/latest"><b>⬇ Download</b></a> ·
+<a href="https://youtu.be/yaWfGhkePuo"><b>🎬 Video tour (5 min)</b></a>
 </p>
 
 ![Diagnosis of a crash (demo dump)](screenshots/diagnosis.png)
